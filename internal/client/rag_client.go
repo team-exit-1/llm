@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"llm/internal/config"
@@ -33,10 +34,13 @@ func NewRAGClient(cfg *config.Config) *RAGClient {
 
 // SearchConversations searches for similar conversations in RAG server
 func (rc *RAGClient) SearchConversations(ctx context.Context, query string, limit int) ([]models.RAGConversationSearchResult, error) {
-	url := fmt.Sprintf("%s/api/rag/conversation/search", rc.baseURL)
+	baseURL := fmt.Sprintf("%s/api/rag/conversation/search", rc.baseURL)
 
-	// Build query parameters
-	fullURL := fmt.Sprintf("%s?query=%s&limit=%d", url, query, limit)
+	// Build query parameters with proper URL encoding
+	params := url.Values{}
+	params.Add("query", query)
+	params.Add("top_k", fmt.Sprintf("%d", limit))
+	fullURL := fmt.Sprintf("%s?%s", baseURL, params.Encode())
 
 	req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
 	if err != nil {
