@@ -10,23 +10,22 @@ import (
 // Config holds all application configuration
 type Config struct {
 	// Server
-	Port   int
-	Env    string // development, production
-	APIKey string
+	Port int
+	Env  string // development, production
 
 	// RAG Server
 	RAGServerURL     string
 	RAGServerTimeout time.Duration
 
 	// OpenAI
-	OpenAIAPIKey          string
-	OpenAIModel           string
-	OpenAITemperature     float32
-	OpenAIMaxTokens       int
+	OpenAIAPIKey      string
+	OpenAIModel       string
+	OpenAITemperature float32
+	OpenAIMaxTokens   int
 
 	// Game Settings
 	MinConversationsForGame int
-	QuestionCacheTTL       time.Duration
+	QuestionCacheTTL        time.Duration
 	MemoryEvaluationWeights [3]float32 // correct, speed, recency weights
 
 	// Logging
@@ -38,7 +37,6 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		Port:                    getEnvAsInt("PORT", 3000),
 		Env:                     getEnv("ENVIRONMENT", "development"),
-		APIKey:                  getEnv("API_KEY", ""),
 		RAGServerURL:            getEnv("RAG_SERVER_URL", "http://localhost:8080"),
 		RAGServerTimeout:        time.Duration(getEnvAsInt("RAG_SERVER_TIMEOUT", 5000)) * time.Millisecond,
 		OpenAIAPIKey:            getEnv("OPENAI_API_KEY", ""),
