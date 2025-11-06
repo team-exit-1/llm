@@ -179,14 +179,20 @@ func (os *OpenAIService) buildSystemPrompt(profileInfo *models.PersonalInfoListR
 	return basePrompt
 }
 
-// GenerateFillInTheBlankQuestion generates a fill-in-the-blank question
+// GenerateFillInTheBlankQuestion generates a fill-in-the-blank question with multiple choice options
 func (os *OpenAIService) GenerateFillInTheBlankQuestion(ctx context.Context, conversationContent string, topic string) (*models.FillInTheBlankQuestionResponse, error) {
 	systemPrompt := `과거 대화 내용을 바탕으로 사용자의 기억력을 테스트하는 빈칸 채우기 문제를 생성하세요.
+문제에는 1~2개의 빈칸(___으로 표시)이 있고, 4개의 선택지(A, B, C, D)를 제공합니다.
 생성한 문제는 다음 JSON 형식으로 반환하세요:
 {
   "question": "빈칸(___) 포함된 문제 내용",
-  "correct_answer": "정답",
-  "acceptable_answers": ["유사답안1", "유사답안2"]
+  "options": [
+    {"id": "A", "text": "선택지1"},
+    {"id": "B", "text": "선택지2"},
+    {"id": "C", "text": "선택지3"},
+    {"id": "D", "text": "선택지4"}
+  ],
+  "correct_answer": "A, B, C, D 중 정답"
 }
 
 주의: JSON만 반환하고 다른 텍스트는 포함하지 마세요.`
@@ -195,7 +201,8 @@ func (os *OpenAIService) GenerateFillInTheBlankQuestion(ctx context.Context, con
 
 주제: %s
 
-위 대화를 바탕으로 빈칸 채우기 문제를 1개 생성하세요. 문제에 반드시 빈칸을 나타내는 ___ 기호를 포함하세요.`, conversationContent, topic)
+위 대화를 바탕으로 빈칸 채우기 문제를 1개 생성하세요.
+문제에 반드시 빈칸을 나타내는 ___ 기호를 1~2개 포함하고, 4개의 선택지를 제공하세요.`, conversationContent, topic)
 
 	resp, err := os.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: os.model,

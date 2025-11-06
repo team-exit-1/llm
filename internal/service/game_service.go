@@ -42,18 +42,7 @@ func (gs *GameService) GenerateQuestion(ctx context.Context, req *models.GameQue
 	// Search for user conversations
 	searchResults, err := gs.ragClient.SearchConversations(ctx, fmt.Sprintf("user:%s", req.UserID), 20)
 	if err != nil {
-		// If RAG server is unavailable, use dummy data for testing
-		searchResults = []models.RAGConversationSearchResult{
-			{
-				ConversationID: "test-conv-1",
-				Score:          0.9,
-				Timestamp:      time.Now().Add(-24 * time.Hour),
-				Messages: []models.RAGMessage{
-					{Role: "user", Content: "Go 언어에 대해 알려줘"},
-					{Role: "assistant", Content: "Go는 Google에서 개발한 프로그래밍 언어입니다."},
-				},
-			},
-		}
+		return nil, fmt.Errorf("failed to search conversations: %w", err)
 	}
 
 	if len(searchResults) < gs.cfg.MinConversationsForGame {
@@ -211,11 +200,16 @@ func (gs *GameService) generateFillInTheBlankQuestion(ctx context.Context, conv 
 
 	qID := uuid.New().String()
 	return &models.FillInTheBlankQuestionResponse{
-		QuestionID:          qID,
-		QuestionType:        "fill_in_blank",
-		Question:            "생성된 빈칸 채우기 문제입니다: ___에 대해 이야기했습니다.",
-		CorrectAnswer:       "정답",
-		AcceptableAnswers:   []string{"유사답안1", "유사답안2"},
+		QuestionID:   qID,
+		QuestionType: "fill_in_blank",
+		Question:     "Go는 ___에서 개발한 프로그래밍 언어입니다.",
+		Options: []models.QuestionOption{
+			{ID: "A", Text: "Microsoft"},
+			{ID: "B", Text: "Google"},
+			{ID: "C", Text: "Apple"},
+			{ID: "D", Text: "Amazon"},
+		},
+		CorrectAnswer:       "B",
 		BasedOnConversation: conv.ConversationID,
 		Difficulty:          "medium",
 		Metadata: models.QuestionMetadata{

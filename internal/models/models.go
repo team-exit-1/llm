@@ -45,13 +45,13 @@ type GameQuestionResponse struct {
 	Metadata            QuestionMetadata `json:"metadata"`
 }
 
-// FillInTheBlankQuestionResponse represents a fill-in-the-blank question
+// FillInTheBlankQuestionResponse represents a fill-in-the-blank question with multiple choice options
 type FillInTheBlankQuestionResponse struct {
 	QuestionID          string           `json:"question_id"`
 	QuestionType        string           `json:"question_type"` // "fill_in_blank"
 	Question            string           `json:"question"`
-	CorrectAnswer       string           `json:"correct_answer"`
-	AcceptableAnswers   []string         `json:"acceptable_answers,omitempty"` // Alternative acceptable answers
+	Options             []QuestionOption `json:"options"`        // 4 choices to fill in the blank
+	CorrectAnswer       string           `json:"correct_answer"` // "A", "B", "C", "D"
 	BasedOnConversation string           `json:"based_on_conversation"`
 	Difficulty          string           `json:"difficulty"`
 	Metadata            QuestionMetadata `json:"metadata"`
