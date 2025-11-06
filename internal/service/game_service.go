@@ -42,19 +42,19 @@ func NewGameService(cfg *config.Config, ragClient *client.RAGClient, openaiServi
 func (gs *GameService) GenerateQuestion(ctx context.Context, req *models.GameQuestionRequest) (interface{}, error) {
 	gs.logger.Start("Generate Question")
 
-	// Fetch conversations
-	searchResults, err := gs.ragClient.SearchConversations(ctx, fmt.Sprintf("user:%s", req.UserID), 20)
+	// Fetch latest 20 conversations
+	searchResults, err := gs.ragClient.SearchConversations(ctx, "conversation", 20)
 	if err != nil {
 		gs.logger.Error("Failed to search conversations", err)
 		gs.logger.End("Generate Question")
 		return nil, fmt.Errorf("insufficient conversation history: %w", err)
 	}
 
-	if len(searchResults) < gs.cfg.MinConversationsForGame {
-		gs.logger.Error("Insufficient conversations", fmt.Errorf("need at least %d", gs.cfg.MinConversationsForGame))
+	// Check if we have enough conversations
+	if len(searchResults) < 5 {
+		gs.logger.Error("Insufficient conversations", fmt.Errorf("need at least 5, got %d", len(searchResults)))
 		gs.logger.End("Generate Question")
-		return nil, fmt.Errorf("insufficient_data: need at least %d conversations, got %d",
-			gs.cfg.MinConversationsForGame, len(searchResults))
+		return nil, fmt.Errorf("insufficient_data: need at least 5 conversations, got %d", len(searchResults))
 	}
 
 	// Determine difficulty and select conversation
