@@ -33,9 +33,6 @@ func ChatSystemPrompt(profileInfo *models.PersonalInfoListResponse, incorrectAtt
 
 [이전 대화 요약]  
 {{previous_summary}}
-
-이제 사용자가 전화를 받았습니다.  
-**자연스러운 첫 인삿말 한 문단을 만들어주세요.**
 `
 
 	// Add profile information if available
