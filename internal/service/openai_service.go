@@ -463,3 +463,34 @@ func (os *OpenAIService) GenerateAnalysisReport(ctx context.Context, domains []m
 
 	return content, nil
 }
+
+// GenerateReportFromDomainScores generates a report from already-analyzed domain scores
+func (os *OpenAIService) GenerateReportFromDomainScores(ctx context.Context, familyScore int, familyInsights []string, lifeEventsScore int, lifeEventsInsights []string, careerScore int, careerInsights []string, hobbiesScore int, hobbiesInsights []string) (string, error) {
+	os.logger.Start("Generate Report from Domain Scores")
+
+	systemPrompt := prompts.AnalysisReportSystemPrompt()
+
+	userPrompt := prompts.AnalysisReportUserPrompt(
+		familyScore, familyInsights,
+		lifeEventsScore, lifeEventsInsights,
+		careerScore, careerInsights,
+		hobbiesScore, hobbiesInsights,
+	)
+
+	messages := []openai.ChatCompletionMessage{
+		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
+		{Role: openai.ChatMessageRoleUser, Content: userPrompt},
+	}
+
+	content, err := os.callOpenAI(ctx, messages)
+	if err != nil {
+		os.logger.Error("Failed to generate report", err)
+		os.logger.End("Generate Report from Domain Scores")
+		return "", fmt.Errorf("failed to generate report: %w", err)
+	}
+
+	os.logger.Success("Report generated successfully")
+	os.logger.End("Generate Report from Domain Scores")
+
+	return content, nil
+}

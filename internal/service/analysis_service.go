@@ -140,3 +140,106 @@ func (as *AnalysisService) fetchIncorrectQuizzes(ctx context.Context, userID str
 	as.logger.Info("Retrieved %d incorrect quiz attempts", len(quizzes))
 	return quizzes, nil
 }
+
+// ProcessDomainAnalysisOnly performs domain analysis only (without report generation)
+func (as *AnalysisService) ProcessDomainAnalysisOnly(ctx context.Context, req *models.AnalysisRequest) (*models.DomainAnalysisOnlyResponse, error) {
+	as.logger.Start("Process Domain Analysis Only")
+
+	// Fetch user's conversation history and incorrect quiz attempts in parallel
+	conversationChan := make(chan []string, 1)
+	incorrectQuizzesChan := make(chan []string, 1)
+
+	go func() {
+		conversations, err := as.fetchConversationHistory(ctx, req.UserID)
+		if err != nil {
+			as.logger.Warn("Failed to fetch conversations", err)
+			conversationChan <- []string{}
+		} else {
+			conversationChan <- conversations
+		}
+	}()
+
+	go func() {
+		quizzes, err := as.fetchIncorrectQuizzes(ctx, req.UserID)
+		if err != nil {
+			as.logger.Warn("Failed to fetch incorrect quizzes", err)
+			incorrectQuizzesChan <- []string{}
+		} else {
+			incorrectQuizzesChan <- quizzes
+		}
+	}()
+
+	conversationHistory := <-conversationChan
+	incorrectQuizzes := <-incorrectQuizzesChan
+
+	as.logger.Section("Analyzing Domains")
+	domains, err := as.openaiService.AnalyzeDomains(ctx, conversationHistory, incorrectQuizzes)
+	if err != nil {
+		as.logger.Error("Failed to analyze domains", err)
+		as.logger.End("Process Domain Analysis Only")
+		return nil, fmt.Errorf("failed to analyze domains: %w", err)
+	}
+
+	as.logger.Success("Domain analysis completed")
+	as.logger.End("Process Domain Analysis Only")
+
+	return &models.DomainAnalysisOnlyResponse{
+		UserID:     req.UserID,
+		Domains:    domains,
+		AnalyzedAt: time.Now(),
+	}, nil
+}
+
+// ProcessReportGenerationOnly generates a report from provided domain scores
+func (as *AnalysisService) ProcessReportGenerationOnly(ctx context.Context, req *models.ReportGenerationRequest) (string, error) {
+	as.logger.Start("Process Report Generation Only")
+
+	// Validate that we have all required domains
+	if len(req.Domains) != 4 {
+		as.logger.Error("Invalid domain count", fmt.Errorf("expected 4 domains, got %d", len(req.Domains)))
+		as.logger.End("Process Report Generation Only")
+		return "", fmt.Errorf("invalid_request: expected 4 domains, got %d", len(req.Domains))
+	}
+
+	// Extract domain data
+	familyScore, familyInsights := 0, []string{}
+	lifeEventsScore, lifeEventsInsights := 0, []string{}
+	careerScore, careerInsights := 0, []string{}
+	hobbiesScore, hobbiesInsights := 0, []string{}
+
+	for _, domain := range req.Domains {
+		switch domain.Domain {
+		case "family":
+			familyScore = domain.Score
+			familyInsights = domain.Insights
+		case "life_events":
+			lifeEventsScore = domain.Score
+			lifeEventsInsights = domain.Insights
+		case "career":
+			careerScore = domain.Score
+			careerInsights = domain.Insights
+		case "hobbies":
+			hobbiesScore = domain.Score
+			hobbiesInsights = domain.Insights
+		}
+	}
+
+	as.logger.Section("Generating Report")
+	report, err := as.openaiService.GenerateReportFromDomainScores(
+		ctx,
+		familyScore, familyInsights,
+		lifeEventsScore, lifeEventsInsights,
+		careerScore, careerInsights,
+		hobbiesScore, hobbiesInsights,
+	)
+	if err != nil {
+		as.logger.Error("Failed to generate report", err)
+		as.logger.End("Process Report Generation Only")
+		return "", fmt.Errorf("failed to generate report: %w", err)
+	}
+
+	as.logger.Success("Report generation completed")
+	as.logger.End("Process Report Generation Only")
+
+	return report, nil
+}

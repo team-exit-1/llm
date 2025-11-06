@@ -46,7 +46,9 @@ func Router(cfg *config.Config, chatService *service.ChatService, gameService *s
 	// Analysis API routes
 	analysis := router.Group("/api")
 	{
-		analysis.POST("/analysis", analysisHandler.ProcessAnalysis)
+		analysis.POST("/analysis", analysisHandler.ProcessAnalysis)                   // 통합: 도메인 분석 + 리포트
+		analysis.POST("/analysis/domains", analysisHandler.ProcessDomainAnalysisOnly) // 도메인 분석만
+		analysis.POST("/analysis/report", analysisHandler.ProcessReportGeneration)    // 리포트 생성만
 	}
 
 	return router

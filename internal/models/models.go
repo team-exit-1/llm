@@ -282,19 +282,19 @@ type IncorrectQuizAttemptsResponse struct {
 
 // DomainScore represents the score and insights for a single domain
 type DomainScore struct {
-	Domain    string   `json:"domain"`    // "family", "life_events", "career", "hobbies"
-	Score     int      `json:"score"`     // 0-100
-	Insights  []string `json:"insights"`  // 인사이트 (최대 5줄)
-	Analysis  string   `json:"analysis"`  // 상세 분석 텍스트
+	Domain   string   `json:"domain"`   // "family", "life_events", "career", "hobbies"
+	Score    int      `json:"score"`    // 0-100
+	Insights []string `json:"insights"` // 인사이트 (최대 5줄)
+	Analysis string   `json:"analysis"` // 상세 분석 텍스트
 }
 
 // AnalysisResult represents the complete domain analysis result
 type AnalysisResult struct {
-	UserID   string         `json:"user_id"`
-	Domains  []DomainScore  `json:"domains"` // 4개 도메인: family, life_events, career, hobbies
-	Summary  string         `json:"summary"`
-	Report   string         `json:"report"`  // MD 형식의 전문적 리포트
-	AnalyzedAt time.Time   `json:"analyzed_at"`
+	UserID     string        `json:"user_id"`
+	Domains    []DomainScore `json:"domains"` // 4개 도메인: family, life_events, career, hobbies
+	Summary    string        `json:"summary"`
+	Report     string        `json:"report"` // MD 형식의 전문적 리포트
+	AnalyzedAt time.Time     `json:"analyzed_at"`
 }
 
 // AnalysisRequest represents a request for domain analysis
@@ -302,10 +302,28 @@ type AnalysisRequest struct {
 	UserID string `json:"user_id" binding:"required"`
 }
 
-// AnalysisResponse represents the API response for analysis
+// AnalysisResponse represents the API response for analysis (통합: 도메인 + 리포트)
 type AnalysisResponse struct {
-	UserID    string        `json:"user_id"`
-	Domains   []DomainScore `json:"domains"`
-	Report    string        `json:"report"`    // MD 형식 리포트 (2000자 이상)
-	AnalyzedAt time.Time    `json:"analyzed_at"`
+	UserID     string        `json:"user_id"`
+	Domains    []DomainScore `json:"domains"`
+	Report     string        `json:"report"` // MD 형식 리포트 (2000자 이상)
+	AnalyzedAt time.Time     `json:"analyzed_at"`
+}
+
+// DomainAnalysisOnlyResponse represents the API response for domain analysis only
+type DomainAnalysisOnlyResponse struct {
+	UserID     string        `json:"user_id"`
+	Domains    []DomainScore `json:"domains"`
+	AnalyzedAt time.Time     `json:"analyzed_at"`
+}
+
+// ReportGenerationRequest represents a request for report generation from domain scores
+type ReportGenerationRequest struct {
+	Domains []DomainScore `json:"domains" binding:"required"` // 4개 도메인 필수
+}
+
+// ReportGenerationResponse represents the API response for report generation
+type ReportGenerationResponse struct {
+	Report      string    `json:"report"` // MD 형식 리포트
+	GeneratedAt time.Time `json:"generated_at"`
 }
