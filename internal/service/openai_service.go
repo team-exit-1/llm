@@ -75,6 +75,110 @@ func (os *OpenAIService) GenerateChatResponse(ctx context.Context, userMessage s
 	return resp.Choices[0].Message.Content, nil
 }
 
+// GenerateChatResponseWithProfile generates a chat response with user profile information
+func (os *OpenAIService) GenerateChatResponseWithProfile(ctx context.Context, userMessage string, contextMessages []string, profileInfo *models.PersonalInfoListResponse) (string, error) {
+	// Build enhanced system prompt with profile context
+	systemPrompt := os.buildSystemPrompt(profileInfo)
+
+	// Build messages for OpenAI
+	messages := []openai.ChatCompletionMessage{
+		{
+			Role:    openai.ChatMessageRoleSystem,
+			Content: systemPrompt,
+		},
+	}
+
+	// Add relevant context from previous conversations with natural integration
+	if len(contextMessages) > 0 {
+		// Limit to 3 most relevant contexts to keep conversation focused
+		contextLimit := 3
+		if len(contextMessages) < contextLimit {
+			contextLimit = len(contextMessages)
+		}
+
+		contextStr := "최근 대화 이력:\n"
+		for i := 0; i < contextLimit; i++ {
+			contextStr += fmt.Sprintf("- %s\n", contextMessages[i])
+		}
+
+		messages = append(messages, openai.ChatCompletionMessage{
+			Role:    openai.ChatMessageRoleAssistant,
+			Content: contextStr,
+		})
+	}
+
+	// Add user message
+	messages = append(messages, openai.ChatCompletionMessage{
+		Role:    openai.ChatMessageRoleUser,
+		Content: userMessage,
+	})
+
+	resp, err := os.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+		Model:       os.model,
+		Messages:    messages,
+		Temperature: os.temperature,
+		MaxTokens:   os.maxTokens,
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("failed to generate response: %w", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		return "", fmt.Errorf("no choices returned from OpenAI")
+	}
+
+	return resp.Choices[0].Message.Content, nil
+}
+
+// buildSystemPrompt constructs an enhanced system prompt with user profile information
+func (os *OpenAIService) buildSystemPrompt(profileInfo *models.PersonalInfoListResponse) string {
+	basePrompt := `당신은 따뜻하고 친근한 일상 대화를 나누는 어시스턴트입니다.
+사용자와의 이전 대화를 기반으로 자연스럽게 대화하며, 필요시 자연스럽게 과거 이야기를 언급하며 기억을 상기시켜 주세요.
+
+대화 방식:
+- 자연스럽고 친근한 톤으로 일상 대화처럼 답변하기
+- 사용자의 상황과 맥락을 이해하고 맞춤형 답변 제공
+- 필요시 과거 대화를 자연스럽게 언급하여 연속성 있는 대화 유지
+- 너무 formal하지 않고 따뜻한 태도 유지
+- 사용자의 개인정보를 존중하고 배려하기`
+
+	// Add profile information if available
+	if profileInfo != nil && len(profileInfo.Items) > 0 {
+		basePrompt += "\n\n사용자 프로필 정보:\n"
+
+		// Categorize profile information
+		profileMap := make(map[string][]string)
+		for _, item := range profileInfo.Items {
+			profileMap[item.Category] = append(profileMap[item.Category], item.Content)
+		}
+
+		// Add categorized information to prompt
+		categoryKorean := map[string]string{
+			"medical":    "의료 정보",
+			"contact":    "연락처",
+			"emergency":  "긴급 연락처",
+			"allergy":    "알레르기",
+			"preference": "선호도",
+			"habit":      "습관",
+		}
+
+		for category, contents := range profileMap {
+			displayName := categoryKorean[category]
+			if displayName == "" {
+				displayName = category
+			}
+			basePrompt += fmt.Sprintf("\n%s: %s", displayName, contents[0])
+		}
+
+		basePrompt += "\n\n이 정보를 참고하여 사용자에게 더욱 맞춤형이고 배려 있는 답변을 제공하세요."
+	}
+
+	basePrompt += "\n\n모든 답변은 자연스러운 일상 대화처럼 해주시고, 과도하게 정중하거나 딱딱하지 않도록 주의하세요."
+
+	return basePrompt
+}
+
 // GenerateOXQuestion generates an OX quiz question
 func (os *OpenAIService) GenerateOXQuestion(ctx context.Context, conversationContent string, topic string) (*models.OXQuestionResponse, error) {
 	systemPrompt := `과거 대화 내용을 바탕으로 사용자의 기억력을 테스트하는 OX 문제를 생성하세요.
