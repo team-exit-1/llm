@@ -119,7 +119,7 @@ func (as *AnalysisService) fetchIncorrectQuizzes(ctx context.Context, userID str
 	as.logger.Section("Fetching Incorrect Quizzes")
 
 	// Fetch incorrect quiz attempts
-	attempts, err := as.ragClient.GetIncorrectQuizAttempts(ctx, userID, 20)
+	attempts, err := as.ragClient.GetIncorrectQuizAttempts(ctx, userID, 10)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch incorrect quiz attempts: %w", err)
 	}
