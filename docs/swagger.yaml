@@ -35,7 +35,7 @@ definitions:
         type: string
       question_type:
         enum:
-        - ox
+        - fill_in_blank
         - multiple_choice
         type: string
       user_id:
@@ -117,7 +117,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: Generate an OX or multiple choice question based on user's conversation
+      description: Generate an Fill in Blank or multiple choice question based on user's conversation
         history
       parameters:
       - description: Question generation request
