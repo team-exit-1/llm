@@ -2,6 +2,8 @@ package api
 
 import (
 	"github.com/gin-gonic/gin"
+	swaggerfiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"llm/internal/api/handler"
 	"llm/internal/api/middleware"
@@ -19,6 +21,9 @@ func Router(cfg *config.Config, chatService *service.ChatService, gameService *s
 	// Create handlers
 	chatHandler := handler.NewChatHandler(chatService)
 	gameHandler := handler.NewGameHandler(gameService)
+
+	// Swagger UI
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerfiles.Handler))
 
 	// Health check
 	router.GET("/health", func(c *gin.Context) {

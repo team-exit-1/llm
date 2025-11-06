@@ -1,0 +1,184 @@
+basePath: /
+definitions:
+  models.APIResponse:
+    properties:
+      data: {}
+      error:
+        $ref: '#/definitions/models.ErrorInfo'
+      metadata:
+        $ref: '#/definitions/models.Metadata'
+      success:
+        type: boolean
+    type: object
+  models.ChatRequest:
+    properties:
+      message:
+        type: string
+      user_id:
+        type: string
+    required:
+    - message
+    - user_id
+    type: object
+  models.ErrorInfo:
+    properties:
+      code:
+        type: string
+      details: {}
+      message:
+        type: string
+    type: object
+  models.GameQuestionRequest:
+    properties:
+      difficulty_hint:
+        description: easy, medium, hard
+        type: string
+      question_type:
+        enum:
+        - ox
+        - multiple_choice
+        type: string
+      user_id:
+        type: string
+    required:
+    - question_type
+    - user_id
+    type: object
+  models.GameResultRequest:
+    properties:
+      game_session_id:
+        type: string
+      is_correct:
+        type: boolean
+      question_id:
+        type: string
+      response_time_ms:
+        type: integer
+      user_answer:
+        type: string
+      user_id:
+        type: string
+    required:
+    - question_id
+    - user_answer
+    - user_id
+    type: object
+  models.Metadata:
+    properties:
+      request_id:
+        type: string
+      timestamp:
+        type: string
+    type: object
+host: refo-llm-hackerton.dsmhs.kr
+info:
+  contact:
+    name: API Support
+    url: http://www.swagger.io/support
+  description: LLM Server for RAG-based Chat and Game Question Generation
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: LLM Server API
+  version: "1.0"
+paths:
+  /api/chat:
+    post:
+      consumes:
+      - application/json
+      description: Send a message and get a response based on conversation history
+      parameters:
+      - description: Chat request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.ChatRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: Process chat message
+      tags:
+      - Chat
+  /api/game/question:
+    post:
+      consumes:
+      - application/json
+      description: Generate an OX or multiple choice question based on user's conversation
+        history
+      parameters:
+      - description: Question generation request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.GameQuestionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: Generate a game question
+      tags:
+      - Game
+  /api/game/result:
+    post:
+      consumes:
+      - application/json
+      description: Evaluate user's game result and store the evaluation
+      parameters:
+      - description: Game result
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.GameResultRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: Evaluate game result
+      tags:
+      - Game
+schemes:
+- https
+- http
+swagger: "2.0"

@@ -25,11 +25,11 @@ func NewChatHandler(chatService *service.ChatService) *ChatHandler {
 // Handle handles chat requests
 // @Summary Process chat message
 // @Description Send a message and get a response based on conversation history
-// @Tags chat
+// @Tags Chat
 // @Accept json
 // @Produce json
 // @Param request body models.ChatRequest true "Chat request"
-// @Success 200 {object} models.APIResponse{data=models.ChatResponse}
+// @Success 200 {object} models.APIResponse
 // @Failure 400 {object} models.APIResponse
 // @Failure 500 {object} models.APIResponse
 // @Router /api/chat [post]

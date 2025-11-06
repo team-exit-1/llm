@@ -25,7 +25,7 @@ func NewGameHandler(gameService *service.GameService) *GameHandler {
 // GenerateQuestion handles game question generation
 // @Summary Generate a game question
 // @Description Generate an OX or multiple choice question based on user's conversation history
-// @Tags game
+// @Tags Game
 // @Accept json
 // @Produce json
 // @Param request body models.GameQuestionRequest true "Question generation request"
@@ -67,11 +67,11 @@ func (h *GameHandler) GenerateQuestion(c *gin.Context) {
 // EvaluateResult handles game result evaluation
 // @Summary Evaluate game result
 // @Description Evaluate user's game result and store the evaluation
-// @Tags game
+// @Tags Game
 // @Accept json
 // @Produce json
 // @Param request body models.GameResultRequest true "Game result"
-// @Success 200 {object} models.APIResponse{data=models.GameResultResponse}
+// @Success 200 {object} models.APIResponse
 // @Failure 400 {object} models.APIResponse
 // @Failure 500 {object} models.APIResponse
 // @Router /api/game/result [post]

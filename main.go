@@ -1,3 +1,15 @@
+// @title LLM Server API
+// @version 1.0
+// @description LLM Server for RAG-based Chat and Game Question Generation
+// @termsOfService http://swagger.io/terms/
+// @contact.name API Support
+// @contact.url http://www.swagger.io/support
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+// @host refo-llm-hackerton.dsmhs.kr
+// @basePath /
+// @schemes https http
+
 package main
 
 import (
@@ -8,6 +20,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	_ "llm/docs"
 	"llm/internal/api"
 	"llm/internal/client"
 	"llm/internal/config"
