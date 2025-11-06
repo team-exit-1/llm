@@ -99,7 +99,7 @@ func (as *AnalysisService) fetchConversationHistory(ctx context.Context, userID 
 	as.logger.Section("Fetching Conversation History")
 
 	// Fetch all conversations for this user using a broad search query
-	results, err := as.ragClient.SearchConversations(ctx, userID, 25)
+	results, err := as.ragClient.SearchConversations(ctx, userID, 50)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search conversations: %w", err)
 	}
@@ -119,7 +119,7 @@ func (as *AnalysisService) fetchIncorrectQuizzes(ctx context.Context, userID str
 	as.logger.Section("Fetching Incorrect Quizzes")
 
 	// Fetch incorrect quiz attempts
-	attempts, err := as.ragClient.GetIncorrectQuizAttempts(ctx, userID, 10)
+	attempts, err := as.ragClient.GetIncorrectQuizAttempts(ctx, userID, 20)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch incorrect quiz attempts: %w", err)
 	}
