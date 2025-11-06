@@ -235,3 +235,44 @@ type PersonalInfoListResponse struct {
 	Total  int                    `json:"total"`
 	UserID string                 `json:"user_id"`
 }
+
+// ===== Incorrect Quiz Attempt Models =====
+
+// QuizOption represents a single quiz option
+type QuizOption struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
+}
+
+// QuizInfo represents quiz information
+type QuizInfo struct {
+	QuizID              string       `json:"quiz_id"`
+	QuestionType        string       `json:"question_type"` // "ox", "multiple_choice"
+	Question            string       `json:"question"`
+	Options             []QuizOption `json:"options,omitempty"`
+	Difficulty          string       `json:"difficulty"`
+	Topic               string       `json:"topic"`
+	BasedOnConversation string       `json:"based_on_conversation"`
+	Category            string       `json:"category"`
+	Hint                string       `json:"hint,omitempty"`
+}
+
+// IncorrectQuizAttempt represents an incorrect quiz attempt
+type IncorrectQuizAttempt struct {
+	Correct       bool     `json:"correct"`
+	AttemptID     int64    `json:"attempt_id"`
+	AttemptOrder  int      `json:"attempt_order"`
+	Quiz          QuizInfo `json:"quiz"`
+	UserAnswer    string   `json:"user_answer"`
+	CorrectAnswer string   `json:"correct_answer"`
+	IsCorrect     bool     `json:"is_correct"`
+	Score         int      `json:"score"`
+	AttemptTime   string   `json:"attempt_time"`
+}
+
+// IncorrectQuizAttemptsResponse represents a list of incorrect quiz attempts
+type IncorrectQuizAttemptsResponse struct {
+	Items  []IncorrectQuizAttempt `json:"items,omitempty"`
+	Total  int                    `json:"total,omitempty"`
+	UserID string                 `json:"user_id,omitempty"`
+}

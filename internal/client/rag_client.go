@@ -267,3 +267,59 @@ func (rc *RAGClient) GetPersonalInfoByUser(ctx context.Context, userID string) (
 
 	return &apiResp.Data.PersonalInfoList, nil
 }
+
+// GetIncorrectQuizAttempts retrieves incorrect quiz attempts for a user
+func (rc *RAGClient) GetIncorrectQuizAttempts(ctx context.Context, userID string, limit int) (*models.IncorrectQuizAttemptsResponse, error) {
+	url := fmt.Sprintf("%s/api/rag/quiz-attempts/incorrect?user_id=%s&limit=%d", rc.baseURL, userID, limit)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := rc.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get incorrect attempts: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("get incorrect attempts failed: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp struct {
+		Status string `json:"status"`
+		Code   int    `json:"code"`
+		Data   struct {
+			Items  []models.IncorrectQuizAttempt `json:"items,omitempty"`
+			Total  int                           `json:"total,omitempty"`
+			UserID string                        `json:"user_id,omitempty"`
+		} `json:"data"`
+		Error *struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if apiResp.Code != http.StatusOK && apiResp.Code != 0 {
+		if apiResp.Error != nil {
+			return nil, fmt.Errorf("get failed: %s - %s", apiResp.Error.Code, apiResp.Error.Message)
+		}
+		return nil, fmt.Errorf("get failed: status code %d", apiResp.Code)
+	}
+
+	return &models.IncorrectQuizAttemptsResponse{
+		Items:  apiResp.Data.Items,
+		Total:  apiResp.Data.Total,
+		UserID: apiResp.Data.UserID,
+	}, nil
+}

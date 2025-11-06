@@ -30,7 +30,7 @@ func NewChatService(cfg *config.Config, ragClient *client.RAGClient, openaiServi
 
 // ProcessChat processes a user chat message and returns a response
 func (cs *ChatService) ProcessChat(ctx context.Context, req *models.ChatRequest) (*models.ChatResponse, error) {
-	// Parallel fetch: search for similar conversations and get user profile
+	// Parallel fetch: search for similar conversations, get user profile, and get incorrect quiz attempts
 	type searchResult struct {
 		results []*models.RAGConversationSearchResult
 		err     error
@@ -39,9 +39,14 @@ func (cs *ChatService) ProcessChat(ctx context.Context, req *models.ChatRequest)
 		profile *models.PersonalInfoListResponse
 		err     error
 	}
+	type incorrectAttemptsResult struct {
+		attempts *models.IncorrectQuizAttemptsResponse
+		err      error
+	}
 
 	searchChan := make(chan searchResult, 1)
 	profileChan := make(chan profileResult, 1)
+	incorrectAttemptsChan := make(chan incorrectAttemptsResult, 1)
 
 	// Search for similar conversations
 	go func() {
@@ -55,9 +60,16 @@ func (cs *ChatService) ProcessChat(ctx context.Context, req *models.ChatRequest)
 		profileChan <- profileResult{profile: profile, err: err}
 	}()
 
-	// Wait for both results
+	// Get incorrect quiz attempts
+	go func() {
+		attempts, err := cs.ragClient.GetIncorrectQuizAttempts(ctx, req.UserID, 5)
+		incorrectAttemptsChan <- incorrectAttemptsResult{attempts: attempts, err: err}
+	}()
+
+	// Wait for all results
 	searchRes := <-searchChan
 	profileRes := <-profileChan
+	incorrectAttemptsRes := <-incorrectAttemptsChan
 
 	if searchRes.err != nil {
 		return nil, fmt.Errorf("failed to search conversations: %w", searchRes.err)
@@ -88,8 +100,14 @@ func (cs *ChatService) ProcessChat(ctx context.Context, req *models.ChatRequest)
 		profileInfo = profileRes.profile
 	}
 
-	// Generate response using OpenAI with profile and context
-	response, err := cs.openaiService.GenerateChatResponseWithProfile(ctx, req.Message, contextMessages, profileInfo)
+	// Extract incorrect quiz attempts
+	var incorrectAttempts *models.IncorrectQuizAttemptsResponse
+	if incorrectAttemptsRes.err == nil {
+		incorrectAttempts = incorrectAttemptsRes.attempts
+	}
+
+	// Generate response using OpenAI with profile, context, and incorrect attempts
+	response, err := cs.openaiService.GenerateChatResponseWithProfile(ctx, req.Message, contextMessages, profileInfo, incorrectAttempts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate response: %w", err)
 	}

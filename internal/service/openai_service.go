@@ -75,10 +75,10 @@ func (os *OpenAIService) GenerateChatResponse(ctx context.Context, userMessage s
 	return resp.Choices[0].Message.Content, nil
 }
 
-// GenerateChatResponseWithProfile generates a chat response with user profile information
-func (os *OpenAIService) GenerateChatResponseWithProfile(ctx context.Context, userMessage string, contextMessages []string, profileInfo *models.PersonalInfoListResponse) (string, error) {
-	// Build enhanced system prompt with profile context
-	systemPrompt := os.buildSystemPrompt(profileInfo)
+// GenerateChatResponseWithProfile generates a chat response with user profile information and incorrect quiz attempts
+func (os *OpenAIService) GenerateChatResponseWithProfile(ctx context.Context, userMessage string, contextMessages []string, profileInfo *models.PersonalInfoListResponse, incorrectAttempts *models.IncorrectQuizAttemptsResponse) (string, error) {
+	// Build enhanced system prompt with profile context and incorrect attempts
+	systemPrompt := os.buildSystemPrompt(profileInfo, incorrectAttempts)
 
 	// Build messages for OpenAI
 	messages := []openai.ChatCompletionMessage{
@@ -131,8 +131,8 @@ func (os *OpenAIService) GenerateChatResponseWithProfile(ctx context.Context, us
 	return resp.Choices[0].Message.Content, nil
 }
 
-// buildSystemPrompt constructs an enhanced system prompt with user profile information
-func (os *OpenAIService) buildSystemPrompt(profileInfo *models.PersonalInfoListResponse) string {
+// buildSystemPrompt constructs an enhanced system prompt with user profile information and incorrect quiz attempts
+func (os *OpenAIService) buildSystemPrompt(profileInfo *models.PersonalInfoListResponse, incorrectAttempts *models.IncorrectQuizAttemptsResponse) string {
 	basePrompt := `당신은 따뜻하고 친근한 일상 대화를 나누는 어시스턴트입니다.
 사용자와의 이전 대화를 기반으로 자연스럽게 대화하며, 필요시 자연스럽게 과거 이야기를 언급하며 기억을 상기시켜 주세요.
 
@@ -172,6 +172,30 @@ func (os *OpenAIService) buildSystemPrompt(profileInfo *models.PersonalInfoListR
 		}
 
 		basePrompt += "\n\n이 정보를 참고하여 사용자에게 더욱 맞춤형이고 배려 있는 답변을 제공하세요."
+	}
+
+	// Add incorrect quiz attempts information if available
+	if incorrectAttempts != nil && len(incorrectAttempts.Items) > 0 {
+		basePrompt += "\n\n사용자의 최근 틀린 퀴즈 답변 기록:\n"
+
+		// Limit to top 3 incorrect attempts to avoid context overload
+		attemptLimit := 3
+		if len(incorrectAttempts.Items) < attemptLimit {
+			attemptLimit = len(incorrectAttempts.Items)
+		}
+
+		for i := 0; i < attemptLimit; i++ {
+			attempt := incorrectAttempts.Items[i]
+			basePrompt += fmt.Sprintf("\n[%s] 문제: %s\n  - 사용자의 답: %s\n  - 정답: %s\n  - 주제: %s",
+				attempt.Quiz.QuestionType,
+				attempt.Quiz.Question,
+				attempt.UserAnswer,
+				attempt.CorrectAnswer,
+				attempt.Quiz.Topic,
+			)
+		}
+
+		basePrompt += "\n\n사용자가 틀린 답변들과 관련된 대화가 나올 때, 자연스럽게 정확한 정보를 제공하거나 그 주제에 대해 부드럽게 언급하여 기억을 도와주세요."
 	}
 
 	basePrompt += "\n\n모든 답변은 자연스러운 일상 대화처럼 해주시고, 과도하게 정중하거나 딱딱하지 않도록 주의하세요."
