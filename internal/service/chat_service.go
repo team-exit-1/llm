@@ -151,21 +151,23 @@ func (cs *ChatService) ProcessChat(ctx context.Context, req *models.ChatRequest)
 	log.Printf("\n--- OpenAI Response ---\n")
 	log.Printf("%s\n", response)
 
-	// Evaluate user response quality (0-100)
-	log.Printf("\n--- Evaluating User Response Quality ---\n")
-	responseScore, evalErr := cs.openaiService.EvaluateUserResponseQuality(ctx, req.Message, contextMessages, profileInfo)
-	if evalErr != nil {
-		log.Printf("WARNING: Failed to evaluate response quality: %v\n", evalErr)
-		responseScore = 50 // Default score if evaluation fails
-	}
-
 	log.Printf("\n=== CHAT SERVICE LOG END ===\n\n")
 
 	// Create conversation ID
 	conversationID := uuid.New().String()
 
-	// Save conversation to RAG asynchronously
+	// Evaluate user response quality and save conversation asynchronously
+	// This prevents response quality evaluation from blocking user response time
 	go func() {
+		log.Printf("\n=== ASYNC: Evaluating User Response Quality ---\n")
+		responseScore, evalErr := cs.openaiService.EvaluateUserResponseQuality(context.Background(), req.Message, contextMessages, profileInfo)
+		if evalErr != nil {
+			log.Printf("ASYNC WARNING: Failed to evaluate response quality: %v\n", evalErr)
+			responseScore = 50 // Fallback to default
+		}
+
+		log.Printf("ASYNC: Response quality evaluation completed with score: %d/100\n", responseScore)
+
 		saveReq := &models.RAGConversationSaveRequest{
 			ConversationID: conversationID,
 			Messages: []models.RAGMessage{
@@ -190,9 +192,9 @@ func (cs *ChatService) ProcessChat(ctx context.Context, req *models.ChatRequest)
 		defer cancel()
 
 		if _, err := cs.ragClient.SaveConversation(ctx, saveReq); err != nil {
-			log.Printf("warning: failed to save conversation to RAG: %v\n", err)
+			log.Printf("ASYNC warning: failed to save conversation to RAG: %v\n", err)
 		} else {
-			log.Printf("Conversation saved to RAG with quality score: %d/100\n", responseScore)
+			log.Printf("ASYNC: Conversation saved to RAG with quality score: %d/100\n", responseScore)
 		}
 	}()
 

@@ -10,6 +10,7 @@ import (
 
 	"llm/internal/config"
 	"llm/internal/models"
+	"llm/internal/prompts"
 )
 
 // OpenAIService handles interactions with OpenAI API
@@ -82,7 +83,7 @@ func (os *OpenAIService) GenerateChatResponseWithProfile(ctx context.Context, us
 	log.Printf("\n=== OPENAI SERVICE LOG START ===\n")
 
 	// Build enhanced system prompt with profile context and incorrect attempts
-	systemPrompt := os.buildSystemPrompt(profileInfo, incorrectAttempts)
+	systemPrompt := prompts.ChatSystemPrompt(profileInfo, incorrectAttempts)
 
 	log.Printf("\n--- System Prompt (LLM Thinking Instructions) ---\n")
 	log.Printf("%s\n", systemPrompt)
@@ -176,102 +177,10 @@ func (os *OpenAIService) GenerateChatResponseWithProfile(ctx context.Context, us
 	return responseContent, nil
 }
 
-// buildSystemPrompt constructs an enhanced system prompt with user profile information and incorrect quiz attempts
-func (os *OpenAIService) buildSystemPrompt(profileInfo *models.PersonalInfoListResponse, incorrectAttempts *models.IncorrectQuizAttemptsResponse) string {
-	basePrompt := `당신은 따뜻하고 친근한 일상 대화를 나누는 어시스턴트입니다.
-사용자와의 이전 대화를 기반으로 자연스럽게 대화하며, 필요시 자연스럽게 과거 이야기를 언급하며 기억을 상기시켜 주세요.
-
-대화 방식:
-- 자연스럽고 친근한 톤으로 일상 대화처럼 답변하기
-- 사용자의 상황과 맥락을 이해하고 맞춤형 답변 제공
-- 필요시 과거 대화를 자연스럽게 언급하여 연속성 있는 대화 유지
-- 너무 formal하지 않고 따뜻한 태도 유지
-- 사용자의 개인정보를 존중하고 배려하기`
-
-	// Add profile information if available
-	if profileInfo != nil && len(profileInfo.Items) > 0 {
-		basePrompt += "\n\n사용자 프로필 정보:\n"
-
-		// Categorize profile information
-		profileMap := make(map[string][]string)
-		for _, item := range profileInfo.Items {
-			profileMap[item.Category] = append(profileMap[item.Category], item.Content)
-		}
-
-		// Add categorized information to prompt
-		categoryKorean := map[string]string{
-			"medical":    "의료 정보",
-			"contact":    "연락처",
-			"emergency":  "긴급 연락처",
-			"allergy":    "알레르기",
-			"preference": "선호도",
-			"habit":      "습관",
-		}
-
-		for category, contents := range profileMap {
-			displayName := categoryKorean[category]
-			if displayName == "" {
-				displayName = category
-			}
-			basePrompt += fmt.Sprintf("\n%s: %s", displayName, contents[0])
-		}
-
-		basePrompt += "\n\n이 정보를 참고하여 사용자에게 더욱 맞춤형이고 배려 있는 답변을 제공하세요."
-	}
-
-	// Add incorrect quiz attempts information if available
-	if incorrectAttempts != nil && len(incorrectAttempts.Items) > 0 {
-		basePrompt += "\n\n사용자의 최근 틀린 퀴즈 답변 기록:\n"
-
-		// Limit to top 3 incorrect attempts to avoid context overload
-		attemptLimit := 3
-		if len(incorrectAttempts.Items) < attemptLimit {
-			attemptLimit = len(incorrectAttempts.Items)
-		}
-
-		for i := 0; i < attemptLimit; i++ {
-			attempt := incorrectAttempts.Items[i]
-			basePrompt += fmt.Sprintf("\n[%s] 문제: %s\n  - 사용자의 답: %s\n  - 정답: %s\n  - 주제: %s",
-				attempt.Quiz.QuestionType,
-				attempt.Quiz.Question,
-				attempt.UserAnswer,
-				attempt.CorrectAnswer,
-				attempt.Quiz.Topic,
-			)
-		}
-
-		basePrompt += "\n\n사용자가 틀린 답변들과 관련된 대화가 나올 때, 자연스럽게 정확한 정보를 제공하거나 그 주제에 대해 부드럽게 언급하여 기억을 도와주세요."
-	}
-
-	basePrompt += "\n\n모든 답변은 자연스러운 일상 대화처럼 해주시고, 과도하게 정중하거나 딱딱하지 않도록 주의하세요."
-
-	return basePrompt
-}
-
 // GenerateFillInTheBlankQuestion generates a fill-in-the-blank question with multiple choice options
 func (os *OpenAIService) GenerateFillInTheBlankQuestion(ctx context.Context, conversationContent string, topic string) (*models.FillInTheBlankQuestionResponse, error) {
-	systemPrompt := `과거 대화 내용을 바탕으로 사용자의 기억력을 테스트하는 빈칸 채우기 문제를 생성하세요.
-문제에는 1~2개의 빈칸(___으로 표시)이 있고, 4개의 선택지(A, B, C, D)를 제공합니다.
-생성한 문제는 다음 JSON 형식으로 반환하세요:
-{
-  "question": "빈칸(___) 포함된 문제 내용",
-  "options": [
-    {"id": "A", "text": "선택지1"},
-    {"id": "B", "text": "선택지2"},
-    {"id": "C", "text": "선택지3"},
-    {"id": "D", "text": "선택지4"}
-  ],
-  "correct_answer": "A, B, C, D 중 정답"
-}
-
-주의: JSON만 반환하고 다른 텍스트는 포함하지 마세요.`
-
-	userPrompt := fmt.Sprintf(`대화 내용: %s
-
-주제: %s
-
-위 대화를 바탕으로 빈칸 채우기 문제를 1개 생성하세요.
-문제에 반드시 빈칸을 나타내는 ___ 기호를 1~2개 포함하고, 4개의 선택지를 제공하세요.`, conversationContent, topic)
+	systemPrompt := prompts.FillInTheBlankQuestionSystemPrompt()
+	userPrompt := prompts.FillInTheBlankQuestionUserPrompt(conversationContent, topic)
 
 	resp, err := os.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: os.model,
@@ -297,31 +206,40 @@ func (os *OpenAIService) GenerateFillInTheBlankQuestion(ctx context.Context, con
 		return nil, fmt.Errorf("no choices returned from OpenAI")
 	}
 
-	return nil, nil // Return parsed result in actual implementation
+	responseContent := resp.Choices[0].Message.Content
+
+	// Parse JSON response
+	type QuestionResponse struct {
+		Question string `json:"question"`
+		Options  []struct {
+			ID   string `json:"id"`
+			Text string `json:"text"`
+		} `json:"options"`
+		CorrectAnswer string `json:"correct_answer"`
+	}
+
+	var questionData QuestionResponse
+	if err := json.Unmarshal([]byte(responseContent), &questionData); err != nil {
+		return nil, fmt.Errorf("failed to parse fill-in-the-blank response: %w", err)
+	}
+
+	// Convert to response format
+	options := make([]models.QuestionOption, len(questionData.Options))
+	for i, opt := range questionData.Options {
+		options[i] = models.QuestionOption{ID: opt.ID, Text: opt.Text}
+	}
+
+	return &models.FillInTheBlankQuestionResponse{
+		Question:      questionData.Question,
+		Options:       options,
+		CorrectAnswer: questionData.CorrectAnswer,
+	}, nil
 }
 
 // GenerateMultipleChoiceQuestion generates a multiple choice question
 func (os *OpenAIService) GenerateMultipleChoiceQuestion(ctx context.Context, conversationContent string, topic string) (*models.MultipleChoiceQuestionResponse, error) {
-	systemPrompt := `과거 대화 내용을 바탕으로 사용자의 기억력을 테스트하는 4지선다 문제를 생성하세요.
-생성한 문제는 다음 JSON 형식으로 반환하세요:
-{
-  "question": "문제 내용",
-  "options": [
-    {"id": "A", "text": "보기1"},
-    {"id": "B", "text": "보기2"},
-    {"id": "C", "text": "보기3"},
-    {"id": "D", "text": "보기4"}
-  ],
-  "correct_answer": "A, B, C, D 중 하나"
-}
-
-주의: JSON만 반환하고 다른 텍스트는 포함하지 마세요.`
-
-	userPrompt := fmt.Sprintf(`대화 내용: %s
-
-주제: %s
-
-위 대화를 바탕으로 4지선다 문제를 1개 생성하세요.`, conversationContent, topic)
+	systemPrompt := prompts.MultipleChoiceQuestionSystemPrompt()
+	userPrompt := prompts.MultipleChoiceQuestionUserPrompt(conversationContent, topic)
 
 	resp, err := os.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: os.model,
@@ -347,54 +265,43 @@ func (os *OpenAIService) GenerateMultipleChoiceQuestion(ctx context.Context, con
 		return nil, fmt.Errorf("no choices returned from OpenAI")
 	}
 
-	return nil, nil // Return parsed result in actual implementation
+	responseContent := resp.Choices[0].Message.Content
+
+	// Parse JSON response
+	type QuestionResponse struct {
+		Question string `json:"question"`
+		Options  []struct {
+			ID   string `json:"id"`
+			Text string `json:"text"`
+		} `json:"options"`
+		CorrectAnswer string `json:"correct_answer"`
+	}
+
+	var questionData QuestionResponse
+	if err := json.Unmarshal([]byte(responseContent), &questionData); err != nil {
+		return nil, fmt.Errorf("failed to parse multiple choice response: %w", err)
+	}
+
+	// Convert to response format
+	options := make([]models.QuestionOption, len(questionData.Options))
+	for i, opt := range questionData.Options {
+		options[i] = models.QuestionOption{ID: opt.ID, Text: opt.Text}
+	}
+
+	return &models.MultipleChoiceQuestionResponse{
+		Question:      questionData.Question,
+		Options:       options,
+		CorrectAnswer: questionData.CorrectAnswer,
+	}, nil
 }
 
 // EvaluateUserResponseQuality evaluates the quality of user's response in conversation
 func (os *OpenAIService) EvaluateUserResponseQuality(ctx context.Context, userMessage string, contextMessages []string, profileInfo *models.PersonalInfoListResponse) (int, error) {
 	log.Printf("\n=== USER RESPONSE QUALITY EVALUATION ===\n")
 
-	// Build evaluation prompt
-	systemPrompt := `당신은 사용자의 대화 응답을 평가하는 전문가입니다.
-사용자의 응답이 얼마나 자연스럽고, 일관성 있으며, 정확한지 평가하세요.
-0-100점 범위로 점수를 매겨주세요.
-
-평가 기준:
-- 일관성 (30점): 프로필 정보와 과거 대화와 일치하는가?
-- 자연스러움 (30점): 일상적인 대화체로 자연스러운가?
-- 구체성 (20점): 충분히 구체적이고 상세한 답변인가?
-- 정확성 (20점): 사실과 맞는 답변인가?
-
-JSON 형식으로 반환하세요:
-{
-  "score": 0-100 범위의 정수,
-  "reasoning": "평가 이유"
-}`
-
-	profileContext := "사용자 프로필 정보: 없음"
-	if profileInfo != nil && len(profileInfo.Items) > 0 {
-		profileJSON, _ := json.MarshalIndent(profileInfo.Items, "", "  ")
-		profileContext = fmt.Sprintf("사용자 프로필 정보:\n%s", string(profileJSON))
-	}
-
-	contextStr := "과거 대화 이력: 없음"
-	if len(contextMessages) > 0 {
-		contextStr = "과거 대화 이력:\n"
-		for i, msg := range contextMessages {
-			if i >= 3 {
-				break
-			}
-			contextStr += fmt.Sprintf("- %s\n", msg)
-		}
-	}
-
-	userPrompt := fmt.Sprintf(`%s
-
-%s
-
-사용자의 현재 응답: "%s"
-
-위 정보를 바탕으로 사용자의 응답 품질을 평가하세요.`, profileContext, contextStr, userMessage)
+	// Build evaluation prompts using prompts package
+	systemPrompt := prompts.UserResponseEvaluationSystemPrompt()
+	userPrompt := prompts.UserResponseEvaluationUserPrompt(userMessage, contextMessages, profileInfo)
 
 	log.Printf("\n--- Evaluation System Prompt ---\n")
 	log.Printf("%s\n", systemPrompt)
@@ -459,22 +366,8 @@ JSON 형식으로 반환하세요:
 
 // EvaluateMemory evaluates user's memory based on game result
 func (os *OpenAIService) EvaluateMemory(ctx context.Context, question string, userAnswer string, isCorrect bool, responseTimeMs int64, topic string) (*models.MemoryEvaluation, error) {
-	systemPrompt := `사용자의 게임 결과를 분석하여 해당 주제에 대한 기억 정도를 평가하세요.
-반환 형식:
-{
-  "retention_score": 0.0~1.0 범위의 점수,
-  "confidence": "high, medium, low 중 하나",
-  "recommendation": "평가 설명"
-}`
-
-	userPrompt := fmt.Sprintf(`
-문제: %s
-사용자 답변: %s
-정답 여부: %v
-응답 시간(ms): %d
-주제: %s
-
-위 정보를 바탕으로 사용자의 기억 정도를 평가하세요.`, question, userAnswer, isCorrect, responseTimeMs, topic)
+	systemPrompt := prompts.MemoryEvaluationSystemPrompt()
+	userPrompt := prompts.MemoryEvaluationUserPrompt(question, userAnswer, isCorrect, responseTimeMs, topic)
 
 	resp, err := os.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: os.model,

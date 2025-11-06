@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -188,68 +189,112 @@ func (gs *GameService) extractTopic(conv models.RAGConversationSearchResult) str
 	return "일반"
 }
 
-func (gs *GameService) generateFillInTheBlankQuestion(ctx context.Context, conv models.RAGConversationSearchResult, topic string) (*models.FillInTheBlankQuestionResponse, error) {
-	// Combine conversation content
+// extractConversationContent combines all conversation messages into a single string
+func (gs *GameService) extractConversationContent(conv models.RAGConversationSearchResult) string {
 	var content string
 	for _, msg := range conv.Messages {
-		content += msg.Content + " "
+		if content != "" {
+			content += "\n"
+		}
+		content += msg.Content
+	}
+	return content
+}
+
+// determineDifficultyFromConversation determines difficulty based on conversation metadata
+func (gs *GameService) determineDifficultyFromConversation(conv models.RAGConversationSearchResult) string {
+	daysSince := int(time.Since(conv.Timestamp).Hours() / 24)
+
+	// If conversation is very recent (0 days), it's easy
+	if daysSince == 0 {
+		return "easy"
+	}
+	// If conversation is a few days old, it's medium
+	if daysSince <= 7 {
+		return "medium"
+	}
+	// If conversation is older, it's hard
+	return "hard"
+}
+
+func (gs *GameService) generateFillInTheBlankQuestion(ctx context.Context, conv models.RAGConversationSearchResult, topic string) (*models.FillInTheBlankQuestionResponse, error) {
+	log.Printf("\n=== GENERATING FILL-IN-THE-BLANK QUESTION ===\n")
+
+	// Extract conversation content
+	conversationContent := gs.extractConversationContent(conv)
+	log.Printf("Conversation content length: %d characters\n", len(conversationContent))
+
+	// Call OpenAI to generate question
+	baseQuestion, err := gs.openaiService.GenerateFillInTheBlankQuestion(ctx, conversationContent, topic)
+	if err != nil {
+		log.Printf("ERROR: Failed to generate fill-in-the-blank question: %v\n", err)
+		return nil, err
 	}
 
-	// Call OpenAI to generate question (simplified for now)
-	// In real implementation, parse JSON response
-
+	// Enrich with metadata
 	qID := uuid.New().String()
-	return &models.FillInTheBlankQuestionResponse{
-		QuestionID:   qID,
-		QuestionType: "fill_in_blank",
-		Question:     "Go는 ___에서 개발한 프로그래밍 언어입니다.",
-		Options: []models.QuestionOption{
-			{ID: "A", Text: "Microsoft"},
-			{ID: "B", Text: "Google"},
-			{ID: "C", Text: "Apple"},
-			{ID: "D", Text: "Amazon"},
-		},
-		CorrectAnswer:       "B",
+	difficulty := gs.determineDifficultyFromConversation(conv)
+
+	response := &models.FillInTheBlankQuestionResponse{
+		QuestionID:          qID,
+		QuestionType:        "fill_in_blank",
+		Question:            baseQuestion.Question,
+		Options:             baseQuestion.Options,
+		CorrectAnswer:       baseQuestion.CorrectAnswer,
 		BasedOnConversation: conv.ConversationID,
-		Difficulty:          "medium",
+		Difficulty:          difficulty,
 		Metadata: models.QuestionMetadata{
 			Topic:                 topic,
 			MemoryScore:           conv.Score,
 			DaysSinceConversation: int(time.Since(conv.Timestamp).Hours() / 24),
 		},
-	}, nil
+	}
+
+	log.Printf("Fill-in-the-blank question generated successfully\n")
+	log.Printf("Question: %s\n", response.Question)
+	log.Printf("=== END GENERATING FILL-IN-THE-BLANK QUESTION ===\n\n")
+
+	return response, nil
 }
 
 func (gs *GameService) generateMultipleChoiceQuestion(ctx context.Context, conv models.RAGConversationSearchResult, topic string) (*models.MultipleChoiceQuestionResponse, error) {
-	// Combine conversation content
-	var content string
-	for _, msg := range conv.Messages {
-		content += msg.Content + " "
+	log.Printf("\n=== GENERATING MULTIPLE CHOICE QUESTION ===\n")
+
+	// Extract conversation content
+	conversationContent := gs.extractConversationContent(conv)
+	log.Printf("Conversation content length: %d characters\n", len(conversationContent))
+
+	// Call OpenAI to generate question
+	baseQuestion, err := gs.openaiService.GenerateMultipleChoiceQuestion(ctx, conversationContent, topic)
+	if err != nil {
+		log.Printf("ERROR: Failed to generate multiple choice question: %v\n", err)
+		return nil, err
 	}
 
-	// Call OpenAI to generate question (simplified for now)
-	// In real implementation, parse JSON response
-
+	// Enrich with metadata
 	qID := uuid.New().String()
-	return &models.MultipleChoiceQuestionResponse{
-		QuestionID:   qID,
-		QuestionType: "multiple_choice",
-		Question:     "생성된 4지선다 문제입니다.",
-		Options: []models.QuestionOption{
-			{ID: "A", Text: "선지1"},
-			{ID: "B", Text: "선지2"},
-			{ID: "C", Text: "선지3"},
-			{ID: "D", Text: "선지4"},
-		},
-		CorrectAnswer:       "B",
+	difficulty := gs.determineDifficultyFromConversation(conv)
+
+	response := &models.MultipleChoiceQuestionResponse{
+		QuestionID:          qID,
+		QuestionType:        "multiple_choice",
+		Question:            baseQuestion.Question,
+		Options:             baseQuestion.Options,
+		CorrectAnswer:       baseQuestion.CorrectAnswer,
 		BasedOnConversation: conv.ConversationID,
-		Difficulty:          "medium",
+		Difficulty:          difficulty,
 		Metadata: models.QuestionMetadata{
 			Topic:                 topic,
 			MemoryScore:           conv.Score,
 			DaysSinceConversation: int(time.Since(conv.Timestamp).Hours() / 24),
 		},
-	}, nil
+	}
+
+	log.Printf("Multiple choice question generated successfully\n")
+	log.Printf("Question: %s\n", response.Question)
+	log.Printf("=== END GENERATING MULTIPLE CHOICE QUESTION ===\n\n")
+
+	return response, nil
 }
 
 func (gs *GameService) calculateRetentionScore(req *models.GameResultRequest) float32 {
