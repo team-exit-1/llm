@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -71,8 +73,23 @@ func (cs *ChatService) ProcessChat(ctx context.Context, req *models.ChatRequest)
 	profileRes := <-profileChan
 	incorrectAttemptsRes := <-incorrectAttemptsChan
 
+	log.Printf("\n=== CHAT SERVICE LOG START ===\n")
+	log.Printf("User ID: %s\n", req.UserID)
+	log.Printf("User Message: %s\n", req.Message)
+
 	if searchRes.err != nil {
+		log.Printf("ERROR: Failed to search conversations: %v\n", searchRes.err)
 		return nil, fmt.Errorf("failed to search conversations: %w", searchRes.err)
+	}
+
+	// Log RAG conversation search results
+	log.Printf("\n--- RAG Conversation Search Results ---\n")
+	if len(searchRes.results) > 0 {
+		searchResJSON, _ := json.MarshalIndent(searchRes.results, "", "  ")
+		log.Printf("Total conversations found: %d\n", len(searchRes.results))
+		log.Printf("Details:\n%s\n", string(searchResJSON))
+	} else {
+		log.Printf("No conversations found\n")
 	}
 
 	// Build context from search results
@@ -94,23 +111,46 @@ func (cs *ChatService) ProcessChat(ctx context.Context, req *models.ChatRequest)
 		}
 	}
 
+	log.Printf("Context messages extracted: %d\n", len(contextMessages))
+	log.Printf("Max relevance score: %.4f\n", maxScore)
+
 	// Extract profile information
 	var profileInfo *models.PersonalInfoListResponse
-	if profileRes.err == nil {
+	if profileRes.err != nil {
+		log.Printf("WARNING: Failed to get personal info: %v\n", profileRes.err)
+	} else if profileRes.profile != nil {
 		profileInfo = profileRes.profile
+		log.Printf("\n--- Personal Info (Core Server) ---\n")
+		profileJSON, _ := json.MarshalIndent(profileInfo, "", "  ")
+		log.Printf("%s\n", string(profileJSON))
+	} else {
+		log.Printf("No personal info found\n")
 	}
 
 	// Extract incorrect quiz attempts
 	var incorrectAttempts *models.IncorrectQuizAttemptsResponse
-	if incorrectAttemptsRes.err == nil {
+	if incorrectAttemptsRes.err != nil {
+		log.Printf("WARNING: Failed to get incorrect attempts: %v\n", incorrectAttemptsRes.err)
+	} else if incorrectAttemptsRes.attempts != nil {
 		incorrectAttempts = incorrectAttemptsRes.attempts
+		log.Printf("\n--- Incorrect Quiz Attempts ---\n")
+		incorrectJSON, _ := json.MarshalIndent(incorrectAttempts, "", "  ")
+		log.Printf("%s\n", string(incorrectJSON))
+	} else {
+		log.Printf("No incorrect attempts found\n")
 	}
 
 	// Generate response using OpenAI with profile, context, and incorrect attempts
+	log.Printf("\n--- Calling OpenAI API ---\n")
 	response, err := cs.openaiService.GenerateChatResponseWithProfile(ctx, req.Message, contextMessages, profileInfo, incorrectAttempts)
 	if err != nil {
+		log.Printf("ERROR: Failed to generate response: %v\n", err)
 		return nil, fmt.Errorf("failed to generate response: %w", err)
 	}
+
+	log.Printf("\n--- OpenAI Response ---\n")
+	log.Printf("%s\n", response)
+	log.Printf("\n=== CHAT SERVICE LOG END ===\n\n")
 
 	// Create conversation ID
 	conversationID := uuid.New().String()

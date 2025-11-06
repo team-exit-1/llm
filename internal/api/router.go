@@ -21,17 +21,13 @@ func Router(cfg *config.Config, chatService *service.ChatService, gameService *s
 	// Create handlers
 	chatHandler := handler.NewChatHandler(chatService)
 	gameHandler := handler.NewGameHandler(gameService)
+	healthHandler := handler.NewHealthHandler()
 
 	// Swagger UI
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerfiles.Handler))
 
 	// Health check
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"status": "ok",
-			"service": "llm-server",
-		})
-	})
+	router.GET("/health", healthHandler.Check)
 
 	// Chat API routes
 	chat := router.Group("/api")

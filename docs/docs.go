@@ -166,6 +166,29 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/health": {
+            "get": {
+                "description": "Check if the LLM server is running and healthy",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Health"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -225,7 +248,7 @@ const docTemplate = `{
                 "question_type": {
                     "type": "string",
                     "enum": [
-                        "ox",
+                        "fill_in_blank",
                         "multiple_choice"
                     ]
                 },

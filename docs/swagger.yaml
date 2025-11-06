@@ -117,7 +117,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: Generate an Fill in Blank or multiple choice question based on user's conversation
+      description: Generate an OX or multiple choice question based on user's conversation
         history
       parameters:
       - description: Question generation request
@@ -178,6 +178,21 @@ paths:
       summary: Evaluate game result
       tags:
       - Game
+  /health:
+    get:
+      description: Check if the LLM server is running and healthy
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Health check
+      tags:
+      - Health
 schemes:
 - https
 - http

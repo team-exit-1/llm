@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/sashabaranov/go-openai"
 
@@ -77,8 +79,13 @@ func (os *OpenAIService) GenerateChatResponse(ctx context.Context, userMessage s
 
 // GenerateChatResponseWithProfile generates a chat response with user profile information and incorrect quiz attempts
 func (os *OpenAIService) GenerateChatResponseWithProfile(ctx context.Context, userMessage string, contextMessages []string, profileInfo *models.PersonalInfoListResponse, incorrectAttempts *models.IncorrectQuizAttemptsResponse) (string, error) {
+	log.Printf("\n=== OPENAI SERVICE LOG START ===\n")
+
 	// Build enhanced system prompt with profile context and incorrect attempts
 	systemPrompt := os.buildSystemPrompt(profileInfo, incorrectAttempts)
+
+	log.Printf("\n--- System Prompt (LLM Thinking Instructions) ---\n")
+	log.Printf("%s\n", systemPrompt)
 
 	// Build messages for OpenAI
 	messages := []openai.ChatCompletionMessage{
@@ -101,17 +108,38 @@ func (os *OpenAIService) GenerateChatResponseWithProfile(ctx context.Context, us
 			contextStr += fmt.Sprintf("- %s\n", contextMessages[i])
 		}
 
+		log.Printf("\n--- Context from Previous Conversations ---\n")
+		log.Printf("%s\n", contextStr)
+
 		messages = append(messages, openai.ChatCompletionMessage{
 			Role:    openai.ChatMessageRoleAssistant,
 			Content: contextStr,
 		})
+	} else {
+		log.Printf("\n--- Context from Previous Conversations ---\n")
+		log.Printf("No context messages available\n")
 	}
 
 	// Add user message
+	log.Printf("\n--- User Message ---\n")
+	log.Printf("%s\n", userMessage)
+
 	messages = append(messages, openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleUser,
 		Content: userMessage,
 	})
+
+	// Log all messages being sent to OpenAI
+	log.Printf("\n--- All Messages Sent to OpenAI ---\n")
+	messagesJSON, _ := json.MarshalIndent(messages, "", "  ")
+	log.Printf("%s\n", string(messagesJSON))
+
+	// Log API request details
+	log.Printf("\n--- OpenAI API Request Details ---\n")
+	log.Printf("Model: %s\n", os.model)
+	log.Printf("Temperature: %.2f\n", os.temperature)
+	log.Printf("Max Tokens: %d\n", os.maxTokens)
+	log.Printf("Message Count: %d\n", len(messages))
 
 	resp, err := os.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model:       os.model,
@@ -121,14 +149,31 @@ func (os *OpenAIService) GenerateChatResponseWithProfile(ctx context.Context, us
 	})
 
 	if err != nil {
+		log.Printf("ERROR: OpenAI API call failed: %v\n", err)
+		log.Printf("=== OPENAI SERVICE LOG END ===\n\n")
 		return "", fmt.Errorf("failed to generate response: %w", err)
 	}
 
 	if len(resp.Choices) == 0 {
+		log.Printf("ERROR: No choices returned from OpenAI\n")
+		log.Printf("=== OPENAI SERVICE LOG END ===\n\n")
 		return "", fmt.Errorf("no choices returned from OpenAI")
 	}
 
-	return resp.Choices[0].Message.Content, nil
+	// Log OpenAI response details
+	log.Printf("\n--- OpenAI API Response ---\n")
+	log.Printf("Response ID: %s\n", resp.ID)
+	log.Printf("Model: %s\n", resp.Model)
+	log.Printf("Total Tokens: %d (Prompt: %d, Completion: %d)\n",
+		resp.Usage.TotalTokens, resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+	log.Printf("Finish Reason: %s\n", resp.Choices[0].FinishReason)
+
+	responseContent := resp.Choices[0].Message.Content
+	log.Printf("\n--- LLM Response Content ---\n")
+	log.Printf("%s\n", responseContent)
+	log.Printf("\n=== OPENAI SERVICE LOG END ===\n\n")
+
+	return responseContent, nil
 }
 
 // buildSystemPrompt constructs an enhanced system prompt with user profile information and incorrect quiz attempts
