@@ -67,6 +67,98 @@
                 }
             }
         },
+        "/api/analysis/domains": {
+            "post": {
+                "description": "Analyze user's conversation history and incorrect quizzes across 4 domains without generating a report",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Analysis"
+                ],
+                "summary": "Process domain analysis only",
+                "parameters": [
+                    {
+                        "description": "Analysis request (user_id required)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.AnalysisRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/analysis/report": {
+            "post": {
+                "description": "Generate a professional markdown report based on provided domain analysis scores",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Analysis"
+                ],
+                "summary": "Generate professional report from domain scores",
+                "parameters": [
+                    {
+                        "description": "Report generation request (4 domains required)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ReportGenerationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/chat": {
             "post": {
                 "description": "Send a message and get a response based on conversation history",
@@ -277,6 +369,30 @@
                 }
             }
         },
+        "models.DomainScore": {
+            "type": "object",
+            "properties": {
+                "analysis": {
+                    "description": "상세 분석 텍스트",
+                    "type": "string"
+                },
+                "domain": {
+                    "description": "\"family\", \"life_events\", \"career\", \"hobbies\"",
+                    "type": "string"
+                },
+                "insights": {
+                    "description": "인사이트 (최대 5줄)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "score": {
+                    "description": "0-100",
+                    "type": "integer"
+                }
+            }
+        },
         "models.ErrorInfo": {
             "type": "object",
             "properties": {
@@ -348,6 +464,21 @@
                 },
                 "timestamp": {
                     "type": "string"
+                }
+            }
+        },
+        "models.ReportGenerationRequest": {
+            "type": "object",
+            "required": [
+                "domains"
+            ],
+            "properties": {
+                "domains": {
+                    "description": "4개 도메인 필수",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.DomainScore"
+                    }
                 }
             }
         }
