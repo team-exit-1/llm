@@ -2,9 +2,7 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,6 +10,7 @@ import (
 	"llm/internal/client"
 	"llm/internal/config"
 	"llm/internal/models"
+	"llm/internal/util"
 )
 
 // ChatService handles chat functionality
@@ -19,6 +18,7 @@ type ChatService struct {
 	ragClient     *client.RAGClient
 	openaiService *OpenAIService
 	cfg           *config.Config
+	logger        *util.Logger
 }
 
 // NewChatService creates a new chat service
@@ -27,176 +27,61 @@ func NewChatService(cfg *config.Config, ragClient *client.RAGClient, openaiServi
 		ragClient:     ragClient,
 		openaiService: openaiService,
 		cfg:           cfg,
+		logger:        util.NewLogger("ChatService"),
 	}
 }
 
 // ProcessChat processes a user chat message and returns a response
 func (cs *ChatService) ProcessChat(ctx context.Context, req *models.ChatRequest) (*models.ChatResponse, error) {
-	// Parallel fetch: search for similar conversations, get user profile, and get incorrect quiz attempts
-	type searchResult struct {
-		results []*models.RAGConversationSearchResult
-		err     error
-	}
-	type profileResult struct {
-		profile *models.PersonalInfoListResponse
-		err     error
-	}
-	type incorrectAttemptsResult struct {
-		attempts *models.IncorrectQuizAttemptsResponse
-		err      error
-	}
+	cs.logger.Start("Process Chat")
 
-	searchChan := make(chan searchResult, 1)
-	profileChan := make(chan profileResult, 1)
-	incorrectAttemptsChan := make(chan incorrectAttemptsResult, 1)
+	// Parallel fetch: conversations, profile, and incorrect attempts
+	searchRes := cs.fetchConversations(ctx, req)
+	profileRes := cs.fetchUserProfile(ctx, req)
+	incorrectAttemptsRes := cs.fetchIncorrectAttempts(ctx, req)
 
-	// Search for similar conversations
-	go func() {
-		results, err := cs.ragClient.SearchConversations(ctx, req.Message, 5)
-		searchChan <- searchResult{results: convertToPointers(results), err: err}
-	}()
-
-	// Get user profile information
-	go func() {
-		profile, err := cs.ragClient.GetPersonalInfoByUser(ctx, req.UserID)
-		profileChan <- profileResult{profile: profile, err: err}
-	}()
-
-	// Get incorrect quiz attempts
-	go func() {
-		attempts, err := cs.ragClient.GetIncorrectQuizAttempts(ctx, req.UserID, 5)
-		incorrectAttemptsChan <- incorrectAttemptsResult{attempts: attempts, err: err}
-	}()
-
-	// Wait for all results
-	searchRes := <-searchChan
-	profileRes := <-profileChan
-	incorrectAttemptsRes := <-incorrectAttemptsChan
-
-	log.Printf("\n=== CHAT SERVICE LOG START ===\n")
-	log.Printf("User ID: %s\n", req.UserID)
-	log.Printf("User Message: %s\n", req.Message)
-
+	// Validate search results
 	if searchRes.err != nil {
-		log.Printf("ERROR: Failed to search conversations: %v\n", searchRes.err)
+		cs.logger.Error("Failed to search conversations", searchRes.err)
+		cs.logger.End("Process Chat")
 		return nil, fmt.Errorf("failed to search conversations: %w", searchRes.err)
 	}
 
-	// Log RAG conversation search results
-	log.Printf("\n--- RAG Conversation Search Results ---\n")
-	if len(searchRes.results) > 0 {
-		searchResJSON, _ := json.MarshalIndent(searchRes.results, "", "  ")
-		log.Printf("Total conversations found: %d\n", len(searchRes.results))
-		log.Printf("Details:\n%s\n", string(searchResJSON))
-	} else {
-		log.Printf("No conversations found\n")
-	}
+	// Log fetched data
+	cs.logFetchedData(searchRes, profileRes, incorrectAttemptsRes)
 
 	// Build context from search results
-	contextMessages := []string{}
-	maxScore := float32(0.0)
+	contextMessages := cs.extractContextMessages(searchRes.results)
+	maxScore := cs.extractMaxScore(searchRes.results)
 
-	for _, result := range searchRes.results {
-		if result == nil {
-			continue
-		}
-		// Extract the question/answer from messages
-		for _, msg := range result.Messages {
-			if msg.Role == "user" || msg.Role == "assistant" {
-				contextMessages = append(contextMessages, msg.Content)
-			}
-		}
-		if result.Score > maxScore {
-			maxScore = result.Score
-		}
-	}
-
-	log.Printf("Context messages extracted: %d\n", len(contextMessages))
-	log.Printf("Max relevance score: %.4f\n", maxScore)
-
-	// Extract profile information
+	// Extract profile and incorrect attempts
 	var profileInfo *models.PersonalInfoListResponse
-	if profileRes.err != nil {
-		log.Printf("WARNING: Failed to get personal info: %v\n", profileRes.err)
-	} else if profileRes.profile != nil {
+	if profileRes.err == nil && profileRes.profile != nil {
 		profileInfo = profileRes.profile
-		log.Printf("\n--- Personal Info (Core Server) ---\n")
-		profileJSON, _ := json.MarshalIndent(profileInfo, "", "  ")
-		log.Printf("%s\n", string(profileJSON))
-	} else {
-		log.Printf("No personal info found\n")
 	}
 
-	// Extract incorrect quiz attempts
 	var incorrectAttempts *models.IncorrectQuizAttemptsResponse
-	if incorrectAttemptsRes.err != nil {
-		log.Printf("WARNING: Failed to get incorrect attempts: %v\n", incorrectAttemptsRes.err)
-	} else if incorrectAttemptsRes.attempts != nil {
+	if incorrectAttemptsRes.err == nil && incorrectAttemptsRes.attempts != nil {
 		incorrectAttempts = incorrectAttemptsRes.attempts
-		log.Printf("\n--- Incorrect Quiz Attempts ---\n")
-		incorrectJSON, _ := json.MarshalIndent(incorrectAttempts, "", "  ")
-		log.Printf("%s\n", string(incorrectJSON))
-	} else {
-		log.Printf("No incorrect attempts found\n")
 	}
 
-	// Generate response using OpenAI with profile, context, and incorrect attempts
-	log.Printf("\n--- Calling OpenAI API ---\n")
+	// Generate response
+	cs.logger.Section("Generating Response")
 	response, err := cs.openaiService.GenerateChatResponseWithProfile(ctx, req.Message, contextMessages, profileInfo, incorrectAttempts)
 	if err != nil {
-		log.Printf("ERROR: Failed to generate response: %v\n", err)
+		cs.logger.Error("Failed to generate response", err)
+		cs.logger.End("Process Chat")
 		return nil, fmt.Errorf("failed to generate response: %w", err)
 	}
-
-	log.Printf("\n--- OpenAI Response ---\n")
-	log.Printf("%s\n", response)
-
-	log.Printf("\n=== CHAT SERVICE LOG END ===\n\n")
 
 	// Create conversation ID
 	conversationID := uuid.New().String()
 
-	// Evaluate user response quality and save conversation asynchronously
-	// This prevents response quality evaluation from blocking user response time
-	go func() {
-		log.Printf("\n=== ASYNC: Evaluating User Response Quality ---\n")
-		responseScore, evalErr := cs.openaiService.EvaluateUserResponseQuality(context.Background(), req.Message, contextMessages, profileInfo)
-		if evalErr != nil {
-			log.Printf("ASYNC WARNING: Failed to evaluate response quality: %v\n", evalErr)
-			responseScore = 50 // Fallback to default
-		}
+	// Evaluate user response and save asynchronously
+	go cs.evaluateAndSave(context.Background(), req, response, conversationID, contextMessages, profileInfo)
 
-		log.Printf("ASYNC: Response quality evaluation completed with score: %d/100\n", responseScore)
-
-		saveReq := &models.RAGConversationSaveRequest{
-			ConversationID: conversationID,
-			Messages: []models.RAGMessage{
-				{
-					Role:    "user",
-					Content: req.Message,
-				},
-				{
-					Role:    "assistant",
-					Content: response,
-				},
-			},
-			Metadata: &models.RAGMetadata{
-				Source:            "llm_chat",
-				SessionID:         req.UserID,
-				Type:              "chat",
-				ConversationScore: responseScore,
-			},
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		if _, err := cs.ragClient.SaveConversation(ctx, saveReq); err != nil {
-			log.Printf("ASYNC warning: failed to save conversation to RAG: %v\n", err)
-		} else {
-			log.Printf("ASYNC: Conversation saved to RAG with quality score: %d/100\n", responseScore)
-		}
-	}()
+	cs.logger.Success("Chat processed successfully")
+	cs.logger.End("Process Chat")
 
 	return &models.ChatResponse{
 		ConversationID: conversationID,
@@ -210,8 +95,142 @@ func (cs *ChatService) ProcessChat(ctx context.Context, req *models.ChatRequest)
 	}, nil
 }
 
-// Helper function to convert slice to pointer slice
-func convertToPointers(results []models.RAGConversationSearchResult) []*models.RAGConversationSearchResult {
+// ============================================================================
+// Helper Methods - Fetching
+// ============================================================================
+
+type searchResult struct {
+	results []*models.RAGConversationSearchResult
+	err     error
+}
+
+type profileResult struct {
+	profile *models.PersonalInfoListResponse
+	err     error
+}
+
+type incorrectAttemptsResult struct {
+	attempts *models.IncorrectQuizAttemptsResponse
+	err      error
+}
+
+func (cs *ChatService) fetchConversations(ctx context.Context, req *models.ChatRequest) searchResult {
+	results := make(chan searchResult, 1)
+	go func() {
+		rag, err := cs.ragClient.SearchConversations(ctx, req.Message, 5)
+		results <- searchResult{results: cs.convertToPointers(rag), err: err}
+	}()
+	return <-results
+}
+
+func (cs *ChatService) fetchUserProfile(ctx context.Context, req *models.ChatRequest) profileResult {
+	results := make(chan profileResult, 1)
+	go func() {
+		profile, err := cs.ragClient.GetPersonalInfoByUser(ctx, req.UserID)
+		results <- profileResult{profile: profile, err: err}
+	}()
+	return <-results
+}
+
+func (cs *ChatService) fetchIncorrectAttempts(ctx context.Context, req *models.ChatRequest) incorrectAttemptsResult {
+	results := make(chan incorrectAttemptsResult, 1)
+	go func() {
+		attempts, err := cs.ragClient.GetIncorrectQuizAttempts(ctx, req.UserID, 5)
+		results <- incorrectAttemptsResult{attempts: attempts, err: err}
+	}()
+	return <-results
+}
+
+// ============================================================================
+// Helper Methods - Data Processing
+// ============================================================================
+
+func (cs *ChatService) logFetchedData(searchRes searchResult, profileRes profileResult, incorrectAttemptsRes incorrectAttemptsResult) {
+	cs.logger.Section("RAG Conversation Search Results")
+	cs.logger.KeyValue("Total conversations", len(searchRes.results))
+
+	if profileRes.err == nil && profileRes.profile != nil {
+		cs.logger.Section("Personal Info")
+		cs.logger.Info("Profile info found: %d items", len(profileRes.profile.Items))
+	}
+
+	if incorrectAttemptsRes.err == nil && incorrectAttemptsRes.attempts != nil {
+		cs.logger.Section("Incorrect Quiz Attempts")
+		cs.logger.Info("Found %d incorrect attempts", len(incorrectAttemptsRes.attempts.Items))
+	}
+}
+
+func (cs *ChatService) extractContextMessages(results []*models.RAGConversationSearchResult) []string {
+	contextMessages := []string{}
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		for _, msg := range result.Messages {
+			if msg.Role == "user" || msg.Role == "assistant" {
+				contextMessages = append(contextMessages, msg.Content)
+			}
+		}
+	}
+	return contextMessages
+}
+
+func (cs *ChatService) extractMaxScore(results []*models.RAGConversationSearchResult) float32 {
+	maxScore := float32(0.0)
+	for _, result := range results {
+		if result != nil && result.Score > maxScore {
+			maxScore = result.Score
+		}
+	}
+	return maxScore
+}
+
+// ============================================================================
+// Helper Methods - Async Processing
+// ============================================================================
+
+func (cs *ChatService) evaluateAndSave(ctx context.Context, req *models.ChatRequest, response, conversationID string, contextMessages []string, profileInfo *models.PersonalInfoListResponse) {
+	cs.logger.Start("Async: Evaluate and Save")
+
+	// Evaluate user response quality
+	responseScore := util.DefaultResponseScore
+	score, err := cs.openaiService.EvaluateUserResponseQuality(ctx, req.Message, contextMessages, profileInfo)
+	if err != nil {
+		cs.logger.Warn("Failed to evaluate response quality, using default", err)
+	} else {
+		responseScore = score
+	}
+
+	// Save conversation to RAG
+	saveReq := &models.RAGConversationSaveRequest{
+		ConversationID: conversationID,
+		Messages: []models.RAGMessage{
+			{Role: "user", Content: req.Message},
+			{Role: "assistant", Content: response},
+		},
+		Metadata: &models.RAGMetadata{
+			Source:            "llm_chat",
+			SessionID:         req.UserID,
+			Type:              "chat",
+			ConversationScore: responseScore,
+		},
+	}
+
+	_, err = cs.ragClient.SaveConversation(ctx, saveReq)
+	if err != nil {
+		cs.logger.Warn("Failed to save conversation", err)
+	} else {
+		cs.logger.Success(fmt.Sprintf("Conversation saved with quality score: %d/100", responseScore))
+	}
+
+	cs.logger.End("Async: Evaluate and Save")
+}
+
+// ============================================================================
+// Utility Methods
+// ============================================================================
+
+func (cs *ChatService) convertToPointers(results []models.RAGConversationSearchResult) []*models.RAGConversationSearchResult {
 	pointers := make([]*models.RAGConversationSearchResult, len(results))
 	for i := range results {
 		pointers[i] = &results[i]

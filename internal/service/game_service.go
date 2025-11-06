@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"llm/internal/client"
 	"llm/internal/config"
 	"llm/internal/models"
+	"llm/internal/util"
 )
 
 // GameService handles game question generation and result evaluation
@@ -21,6 +21,7 @@ type GameService struct {
 	cfg           *config.Config
 	questionCache map[string]*models.StoredQuestion
 	cacheMutex    sync.RWMutex
+	logger        *util.Logger
 }
 
 // NewGameService creates a new game service
@@ -30,100 +31,94 @@ func NewGameService(cfg *config.Config, ragClient *client.RAGClient, openaiServi
 		openaiService: openaiService,
 		cfg:           cfg,
 		questionCache: make(map[string]*models.StoredQuestion),
+		logger:        util.NewLogger("GameService"),
 	}
 
-	// Start cache cleanup routine
 	go gs.cleanupCacheRoutine()
-
 	return gs
 }
 
-// GenerateQuestion generates a game question based on user's conversation history
+// GenerateQuestion generates a question based on user's conversation history
 func (gs *GameService) GenerateQuestion(ctx context.Context, req *models.GameQuestionRequest) (interface{}, error) {
-	// Search for user conversations
+	gs.logger.Start("Generate Question")
+
+	// Fetch conversations
 	searchResults, err := gs.ragClient.SearchConversations(ctx, fmt.Sprintf("user:%s", req.UserID), 20)
 	if err != nil {
-		return nil, fmt.Errorf("failed to search conversations: %w", err)
+		gs.logger.Error("Failed to search conversations", err)
+		gs.logger.End("Generate Question")
+		return nil, fmt.Errorf("insufficient conversation history: %w", err)
 	}
 
 	if len(searchResults) < gs.cfg.MinConversationsForGame {
-		return nil, fmt.Errorf("insufficient_data: need at least %d conversations, got %d", gs.cfg.MinConversationsForGame, len(searchResults))
+		gs.logger.Error("Insufficient conversations", fmt.Errorf("need at least %d", gs.cfg.MinConversationsForGame))
+		gs.logger.End("Generate Question")
+		return nil, fmt.Errorf("insufficient_data: need at least %d conversations, got %d",
+			gs.cfg.MinConversationsForGame, len(searchResults))
 	}
 
-	// Evaluate user's memory and determine difficulty
+	// Determine difficulty and select conversation
 	difficulty := gs.determineDifficulty(req.DifficultyHint, searchResults)
-
-	// Select a conversation based on difficulty
 	selectedConv := gs.selectConversation(searchResults, difficulty)
-
-	// Extract topic from conversation
 	topic := gs.extractTopic(selectedConv)
+
+	gs.logger.KeyValue("Difficulty", difficulty, "Topic", topic)
 
 	// Generate question based on type
 	var response interface{}
 	switch req.QuestionType {
-	case "fill_in_blank":
+	case util.QuestionTypeFillInBlank:
 		response, err = gs.generateFillInTheBlankQuestion(ctx, selectedConv, topic)
-	case "multiple_choice":
+	case util.QuestionTypeMultipleChoice:
 		response, err = gs.generateMultipleChoiceQuestion(ctx, selectedConv, topic)
 	default:
+		gs.logger.Error("Invalid question type", fmt.Errorf(req.QuestionType))
+		gs.logger.End("Generate Question")
 		return nil, fmt.Errorf("invalid_question_type: %s", req.QuestionType)
 	}
 
 	if err != nil {
+		gs.logger.End("Generate Question")
 		return nil, err
 	}
 
 	// Cache the question
 	gs.cacheQuestion(response)
 
+	gs.logger.Success("Question generated and cached")
+	gs.logger.End("Generate Question")
 	return response, nil
 }
 
 // EvaluateGameResult evaluates a game result and stores the evaluation
 func (gs *GameService) EvaluateGameResult(ctx context.Context, req *models.GameResultRequest) (*models.GameResultResponse, error) {
+	gs.logger.Start("Evaluate Game Result")
+
 	// Calculate retention score
 	retentionScore := gs.calculateRetentionScore(req)
-
-	// Determine confidence level
 	confidence := gs.determineConfidence(retentionScore)
+	recommendation := gs.getRecommendation(retentionScore)
 
-	// Get recommendation
-	recommendation := gs.getRecommendation(retentionScore, confidence)
+	gs.logger.KeyValue("Retention Score", retentionScore, "Confidence", confidence)
 
-	// Get topic from cached question (or determine from context)
-	topic := "일반"
+	// Get topic from cached question
+	topic := util.DifficultyEasy // Default
 	cachedQuestion := gs.getCachedQuestion(req.QuestionID)
-	if cachedQuestion != nil {
+	if cachedQuestion != nil && cachedQuestion.Topic != "" {
 		topic = cachedQuestion.Topic
 	}
 
-	// Save evaluation to RAG
-	evalID := uuid.New().String()
-	saveReq := &models.RAGConversationSaveRequest{
-		ConversationID: fmt.Sprintf("memory_eval_%s", evalID),
-		Messages: []models.RAGMessage{
-			{
-				Role:    "system",
-				Content: fmt.Sprintf("사용자가 %s에 대한 기억력 테스트에서 %s", topic, map[bool]string{true: "정답", false: "오답"}[req.IsCorrect]),
-			},
-		},
-		Metadata: &models.RAGMetadata{
-			Type:           "memory_evaluation",
-			RetentionScore: retentionScore,
-			QuestionID:     req.QuestionID,
-		},
-	}
+	// Save evaluation asynchronously
+	go gs.saveEvaluation(context.Background(), req, topic, retentionScore)
 
-	if _, err := gs.ragClient.SaveConversation(ctx, saveReq); err != nil {
-		fmt.Printf("warning: failed to save evaluation to RAG: %v\n", err)
-	}
-
-	// Determine next question suggestion
+	// Suggest next difficulty
 	nextDifficulty := gs.suggestNextDifficulty(retentionScore)
 
+	gs.logger.Success("Game result evaluated")
+	gs.logger.End("Evaluate Game Result")
+
 	return &models.GameResultResponse{
-		ResultID: evalID,
+		ResultID: uuid.New().String(),
 		MemoryEvaluation: models.MemoryEvaluation{
 			Topic:          topic,
 			RetentionScore: retentionScore,
@@ -138,48 +133,101 @@ func (gs *GameService) EvaluateGameResult(ctx context.Context, req *models.GameR
 	}, nil
 }
 
-// Helper methods
+// ============================================================================
+// Helper Methods - Question Generation
+// ============================================================================
+
+func (gs *GameService) generateFillInTheBlankQuestion(ctx context.Context, conv models.RAGConversationSearchResult, topic string) (*models.FillInTheBlankQuestionResponse, error) {
+	conversationContent := gs.extractConversationContent(conv)
+	baseQuestion, err := gs.openaiService.GenerateFillInTheBlankQuestion(ctx, conversationContent, topic)
+	if err != nil {
+		return nil, err
+	}
+
+	return &models.FillInTheBlankQuestionResponse{
+		QuestionID:          uuid.New().String(),
+		QuestionType:        util.QuestionTypeFillInBlank,
+		Question:            baseQuestion.Question,
+		Options:             baseQuestion.Options,
+		CorrectAnswer:       baseQuestion.CorrectAnswer,
+		BasedOnConversation: conv.ConversationID,
+		Difficulty:          gs.determineDifficultyFromConversation(conv),
+		Metadata: models.QuestionMetadata{
+			Topic:                 topic,
+			MemoryScore:           conv.Score,
+			DaysSinceConversation: int(time.Since(conv.Timestamp).Hours() / 24),
+		},
+	}, nil
+}
+
+func (gs *GameService) generateMultipleChoiceQuestion(ctx context.Context, conv models.RAGConversationSearchResult, topic string) (*models.MultipleChoiceQuestionResponse, error) {
+	conversationContent := gs.extractConversationContent(conv)
+	baseQuestion, err := gs.openaiService.GenerateMultipleChoiceQuestion(ctx, conversationContent, topic)
+	if err != nil {
+		return nil, err
+	}
+
+	return &models.MultipleChoiceQuestionResponse{
+		QuestionID:          uuid.New().String(),
+		QuestionType:        util.QuestionTypeMultipleChoice,
+		Question:            baseQuestion.Question,
+		Options:             baseQuestion.Options,
+		CorrectAnswer:       baseQuestion.CorrectAnswer,
+		BasedOnConversation: conv.ConversationID,
+		Difficulty:          gs.determineDifficultyFromConversation(conv),
+		Metadata: models.QuestionMetadata{
+			Topic:                 topic,
+			MemoryScore:           conv.Score,
+			DaysSinceConversation: int(time.Since(conv.Timestamp).Hours() / 24),
+		},
+	}, nil
+}
 
 func (gs *GameService) determineDifficulty(hint string, searchResults []models.RAGConversationSearchResult) string {
-	if hint != "" && (hint == "easy" || hint == "medium" || hint == "hard") {
+	if hint != "" && (hint == util.DifficultyEasy || hint == util.DifficultyMedium || hint == util.DifficultyHard) {
 		return hint
 	}
 
-	// Auto-determine based on conversation age and frequency
 	if len(searchResults) == 0 {
-		return "easy"
+		return util.DifficultyEasy
 	}
 
 	recentCount := 0
 	for _, result := range searchResults {
-		daysSince := time.Since(result.Timestamp).Hours() / 24
-		if daysSince < 1 {
+		if time.Since(result.Timestamp).Hours()/24 < 1 {
 			recentCount++
 		}
 	}
 
 	if recentCount > len(searchResults)/2 {
-		return "easy" // Many recent conversations
+		return util.DifficultyEasy
 	} else if recentCount > 0 {
-		return "medium"
-	} else {
-		return "hard"
+		return util.DifficultyMedium
 	}
+	return util.DifficultyHard
+}
+
+func (gs *GameService) determineDifficultyFromConversation(conv models.RAGConversationSearchResult) string {
+	daysSince := int(time.Since(conv.Timestamp).Hours() / 24)
+
+	if daysSince == 0 {
+		return util.DifficultyEasy
+	}
+	if daysSince <= 7 {
+		return util.DifficultyMedium
+	}
+	return util.DifficultyHard
 }
 
 func (gs *GameService) selectConversation(searchResults []models.RAGConversationSearchResult, difficulty string) models.RAGConversationSearchResult {
 	if len(searchResults) == 0 {
 		return models.RAGConversationSearchResult{}
 	}
-
-	// Simple selection: for easy, pick most recent; for hard, pick oldest
-	// For multiple choice, pick based on score
 	return searchResults[0]
 }
 
 func (gs *GameService) extractTopic(conv models.RAGConversationSearchResult) string {
 	if len(conv.Messages) > 0 {
-		// Simple topic extraction from first message
 		content := conv.Messages[0].Content
 		if len(content) > 50 {
 			return content[:50]
@@ -189,7 +237,6 @@ func (gs *GameService) extractTopic(conv models.RAGConversationSearchResult) str
 	return "일반"
 }
 
-// extractConversationContent combines all conversation messages into a single string
 func (gs *GameService) extractConversationContent(conv models.RAGConversationSearchResult) string {
 	var content string
 	for _, msg := range conv.Messages {
@@ -201,101 +248,9 @@ func (gs *GameService) extractConversationContent(conv models.RAGConversationSea
 	return content
 }
 
-// determineDifficultyFromConversation determines difficulty based on conversation metadata
-func (gs *GameService) determineDifficultyFromConversation(conv models.RAGConversationSearchResult) string {
-	daysSince := int(time.Since(conv.Timestamp).Hours() / 24)
-
-	// If conversation is very recent (0 days), it's easy
-	if daysSince == 0 {
-		return "easy"
-	}
-	// If conversation is a few days old, it's medium
-	if daysSince <= 7 {
-		return "medium"
-	}
-	// If conversation is older, it's hard
-	return "hard"
-}
-
-func (gs *GameService) generateFillInTheBlankQuestion(ctx context.Context, conv models.RAGConversationSearchResult, topic string) (*models.FillInTheBlankQuestionResponse, error) {
-	log.Printf("\n=== GENERATING FILL-IN-THE-BLANK QUESTION ===\n")
-
-	// Extract conversation content
-	conversationContent := gs.extractConversationContent(conv)
-	log.Printf("Conversation content length: %d characters\n", len(conversationContent))
-
-	// Call OpenAI to generate question
-	baseQuestion, err := gs.openaiService.GenerateFillInTheBlankQuestion(ctx, conversationContent, topic)
-	if err != nil {
-		log.Printf("ERROR: Failed to generate fill-in-the-blank question: %v\n", err)
-		return nil, err
-	}
-
-	// Enrich with metadata
-	qID := uuid.New().String()
-	difficulty := gs.determineDifficultyFromConversation(conv)
-
-	response := &models.FillInTheBlankQuestionResponse{
-		QuestionID:          qID,
-		QuestionType:        "fill_in_blank",
-		Question:            baseQuestion.Question,
-		Options:             baseQuestion.Options,
-		CorrectAnswer:       baseQuestion.CorrectAnswer,
-		BasedOnConversation: conv.ConversationID,
-		Difficulty:          difficulty,
-		Metadata: models.QuestionMetadata{
-			Topic:                 topic,
-			MemoryScore:           conv.Score,
-			DaysSinceConversation: int(time.Since(conv.Timestamp).Hours() / 24),
-		},
-	}
-
-	log.Printf("Fill-in-the-blank question generated successfully\n")
-	log.Printf("Question: %s\n", response.Question)
-	log.Printf("=== END GENERATING FILL-IN-THE-BLANK QUESTION ===\n\n")
-
-	return response, nil
-}
-
-func (gs *GameService) generateMultipleChoiceQuestion(ctx context.Context, conv models.RAGConversationSearchResult, topic string) (*models.MultipleChoiceQuestionResponse, error) {
-	log.Printf("\n=== GENERATING MULTIPLE CHOICE QUESTION ===\n")
-
-	// Extract conversation content
-	conversationContent := gs.extractConversationContent(conv)
-	log.Printf("Conversation content length: %d characters\n", len(conversationContent))
-
-	// Call OpenAI to generate question
-	baseQuestion, err := gs.openaiService.GenerateMultipleChoiceQuestion(ctx, conversationContent, topic)
-	if err != nil {
-		log.Printf("ERROR: Failed to generate multiple choice question: %v\n", err)
-		return nil, err
-	}
-
-	// Enrich with metadata
-	qID := uuid.New().String()
-	difficulty := gs.determineDifficultyFromConversation(conv)
-
-	response := &models.MultipleChoiceQuestionResponse{
-		QuestionID:          qID,
-		QuestionType:        "multiple_choice",
-		Question:            baseQuestion.Question,
-		Options:             baseQuestion.Options,
-		CorrectAnswer:       baseQuestion.CorrectAnswer,
-		BasedOnConversation: conv.ConversationID,
-		Difficulty:          difficulty,
-		Metadata: models.QuestionMetadata{
-			Topic:                 topic,
-			MemoryScore:           conv.Score,
-			DaysSinceConversation: int(time.Since(conv.Timestamp).Hours() / 24),
-		},
-	}
-
-	log.Printf("Multiple choice question generated successfully\n")
-	log.Printf("Question: %s\n", response.Question)
-	log.Printf("=== END GENERATING MULTIPLE CHOICE QUESTION ===\n\n")
-
-	return response, nil
-}
+// ============================================================================
+// Helper Methods - Evaluation
+// ============================================================================
 
 func (gs *GameService) calculateRetentionScore(req *models.GameResultRequest) float32 {
 	weights := gs.cfg.MemoryEvaluationWeights
@@ -307,58 +262,52 @@ func (gs *GameService) calculateRetentionScore(req *models.GameResultRequest) fl
 	}
 
 	// Response time score (30% weight) - faster = better
-	// Normalize to 0-1 range (5000ms = 1.0, >5000ms = 0.0)
 	timeScore := float32(1.0)
-	if req.ResponseTimeMs > 5000 {
+	if req.ResponseTimeMs > util.ResponseTimeThreshold {
 		timeScore = 0.0
 	} else {
-		timeScore = float32(float64(5000-req.ResponseTimeMs) / 5000.0)
+		timeScore = float32(float64(util.ResponseTimeThreshold-req.ResponseTimeMs) / float64(util.ResponseTimeThreshold))
 	}
 
-	// Recency score (20% weight) - always 1.0 for now since it's calculated at result time
+	// Recency score (20% weight)
 	recencyScore := float32(1.0)
 
-	retentionScore := weights[0]*correctScore + weights[1]*timeScore + weights[2]*recencyScore
-	return retentionScore
+	return weights[0]*correctScore + weights[1]*timeScore + weights[2]*recencyScore
 }
 
 func (gs *GameService) determineConfidence(score float32) string {
 	if score >= 0.8 {
-		return "high"
+		return util.ConfidenceHigh
 	} else if score >= 0.5 {
-		return "medium"
-	} else {
-		return "low"
+		return util.ConfidenceMedium
 	}
+	return util.ConfidenceLow
 }
 
-func (gs *GameService) getRecommendation(score float32, confidence string) string {
+func (gs *GameService) getRecommendation(score float32) string {
 	if score >= 0.9 {
 		return "이 주제는 매우 잘 기억하고 있습니다."
 	} else if score >= 0.7 {
 		return "이 주제는 비교적 잘 기억하고 있습니다."
 	} else if score >= 0.5 {
 		return "이 주제는 부분적으로 기억하고 있습니다. 복습을 권장합니다."
-	} else {
-		return "이 주제는 잘 기억하지 못하고 있습니다. 자주 복습해주세요."
 	}
+	return "이 주제는 잘 기억하지 못하고 있습니다. 자주 복습해주세요."
 }
 
 func (gs *GameService) suggestNextDifficulty(score float32) string {
 	if score >= 0.8 {
-		return "hard" // Increase difficulty
+		return util.DifficultyHard
 	} else if score >= 0.5 {
-		return "medium" // Maintain difficulty
-	} else {
-		return "easy" // Decrease difficulty
+		return util.DifficultyMedium
 	}
+	return util.DifficultyEasy
 }
 
 func (gs *GameService) cacheQuestion(q interface{}) {
 	gs.cacheMutex.Lock()
 	defer gs.cacheMutex.Unlock()
 
-	// Extract question ID and store with expiry
 	var qID string
 	switch v := q.(type) {
 	case *models.FillInTheBlankQuestionResponse:
@@ -371,7 +320,7 @@ func (gs *GameService) cacheQuestion(q interface{}) {
 
 	gs.questionCache[qID] = &models.StoredQuestion{
 		QuestionID: qID,
-		ExpiresAt:  time.Now().Add(gs.cfg.QuestionCacheTTL),
+		ExpiresAt:  time.Now().Add(24 * time.Hour),
 	}
 }
 
@@ -384,6 +333,34 @@ func (gs *GameService) getCachedQuestion(qID string) *models.StoredQuestion {
 		return nil
 	}
 	return q
+}
+
+func (gs *GameService) saveEvaluation(ctx context.Context, req *models.GameResultRequest, topic string, retentionScore float32) {
+	gs.logger.Start("Async: Save Evaluation")
+
+	saveReq := &models.RAGConversationSaveRequest{
+		ConversationID: fmt.Sprintf("memory_eval_%s", uuid.New().String()),
+		Messages: []models.RAGMessage{
+			{
+				Role:    "system",
+				Content: fmt.Sprintf("사용자가 %s에 대한 기억력 테스트에서 %s", topic, map[bool]string{true: "정답", false: "오답"}[req.IsCorrect]),
+			},
+		},
+		Metadata: &models.RAGMetadata{
+			Type:           "memory_evaluation",
+			RetentionScore: retentionScore,
+			QuestionID:     req.QuestionID,
+		},
+	}
+
+	_, err := gs.ragClient.SaveConversation(ctx, saveReq)
+	if err != nil {
+		gs.logger.Warn("Failed to save evaluation", err)
+	} else {
+		gs.logger.Success("Evaluation saved")
+	}
+
+	gs.logger.End("Async: Save Evaluation")
 }
 
 func (gs *GameService) cleanupCacheRoutine() {
