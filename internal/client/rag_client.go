@@ -160,3 +160,110 @@ func (rc *RAGClient) Health(ctx context.Context) (bool, error) {
 
 	return resp.StatusCode == http.StatusOK, nil
 }
+
+// CreatePersonalInfo creates a new personal information entry
+func (rc *RAGClient) CreatePersonalInfo(ctx context.Context, req *models.PersonalInfoCreateRequest) (string, error) {
+	url := fmt.Sprintf("%s/api/rag/personal-info", rc.baseURL)
+
+	data, err := json.Marshal(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(data))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := rc.httpClient.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("failed to create personal info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("create personal info failed: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp struct {
+		Success bool `json:"success"`
+		Data    struct {
+			PersonalInfo struct {
+				ID string `json:"id"`
+			} `json:"personal_info"`
+		} `json:"data"`
+		Error *struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return "", fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if !apiResp.Success {
+		if apiResp.Error != nil {
+			return "", fmt.Errorf("create failed: %s - %s", apiResp.Error.Code, apiResp.Error.Message)
+		}
+		return "", fmt.Errorf("create failed: unknown error")
+	}
+
+	return apiResp.Data.PersonalInfo.ID, nil
+}
+
+// GetPersonalInfoByUser retrieves all personal information for a user
+func (rc *RAGClient) GetPersonalInfoByUser(ctx context.Context, userID string) (*models.PersonalInfoListResponse, error) {
+	url := fmt.Sprintf("%s/api/rag/personal-info/user/%s", rc.baseURL, userID)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := rc.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get personal info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("get personal info failed: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp struct {
+		Success bool `json:"success"`
+		Data    struct {
+			PersonalInfoList models.PersonalInfoListResponse `json:"personal_info_list"`
+		} `json:"data"`
+		Error *struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if !apiResp.Success {
+		if apiResp.Error != nil {
+			return nil, fmt.Errorf("get failed: %s - %s", apiResp.Error.Code, apiResp.Error.Message)
+		}
+		return nil, fmt.Errorf("get failed: unknown error")
+	}
+
+	return &apiResp.Data.PersonalInfoList, nil
+}
