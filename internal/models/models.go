@@ -30,7 +30,7 @@ type ContextUsage struct {
 // GameQuestionRequest represents a request to generate a game question
 type GameQuestionRequest struct {
 	UserID         string `json:"user_id" binding:"required"`
-	QuestionType   string `json:"question_type" binding:"required,oneof=ox multiple_choice"`
+	QuestionType   string `json:"question_type" binding:"required,oneof=fill_in_blank multiple_choice"`
 	DifficultyHint string `json:"difficulty_hint,omitempty"` // easy, medium, hard
 }
 
@@ -45,12 +45,13 @@ type GameQuestionResponse struct {
 	Metadata            QuestionMetadata `json:"metadata"`
 }
 
-// OXQuestionResponse represents an OX quiz question
-type OXQuestionResponse struct {
+// FillInTheBlankQuestionResponse represents a fill-in-the-blank question
+type FillInTheBlankQuestionResponse struct {
 	QuestionID          string           `json:"question_id"`
-	QuestionType        string           `json:"question_type"` // "ox"
+	QuestionType        string           `json:"question_type"` // "fill_in_blank"
 	Question            string           `json:"question"`
-	CorrectAnswer       string           `json:"correct_answer"` // "O" or "X"
+	CorrectAnswer       string           `json:"correct_answer"`
+	AcceptableAnswers   []string         `json:"acceptable_answers,omitempty"` // Alternative acceptable answers
 	BasedOnConversation string           `json:"based_on_conversation"`
 	Difficulty          string           `json:"difficulty"`
 	Metadata            QuestionMetadata `json:"metadata"`

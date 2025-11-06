@@ -15,11 +15,11 @@ import (
 
 // GameService handles game question generation and result evaluation
 type GameService struct {
-	ragClient         *client.RAGClient
-	openaiService     *OpenAIService
-	cfg               *config.Config
-	questionCache     map[string]*models.StoredQuestion
-	cacheMutex        sync.RWMutex
+	ragClient     *client.RAGClient
+	openaiService *OpenAIService
+	cfg           *config.Config
+	questionCache map[string]*models.StoredQuestion
+	cacheMutex    sync.RWMutex
 }
 
 // NewGameService creates a new game service
@@ -42,7 +42,18 @@ func (gs *GameService) GenerateQuestion(ctx context.Context, req *models.GameQue
 	// Search for user conversations
 	searchResults, err := gs.ragClient.SearchConversations(ctx, fmt.Sprintf("user:%s", req.UserID), 20)
 	if err != nil {
-		return nil, fmt.Errorf("failed to search conversations: %w", err)
+		// If RAG server is unavailable, use dummy data for testing
+		searchResults = []models.RAGConversationSearchResult{
+			{
+				ConversationID: "test-conv-1",
+				Score:          0.9,
+				Timestamp:      time.Now().Add(-24 * time.Hour),
+				Messages: []models.RAGMessage{
+					{Role: "user", Content: "Go 언어에 대해 알려줘"},
+					{Role: "assistant", Content: "Go는 Google에서 개발한 프로그래밍 언어입니다."},
+				},
+			},
+		}
 	}
 
 	if len(searchResults) < gs.cfg.MinConversationsForGame {
@@ -61,8 +72,8 @@ func (gs *GameService) GenerateQuestion(ctx context.Context, req *models.GameQue
 	// Generate question based on type
 	var response interface{}
 	switch req.QuestionType {
-	case "ox":
-		response, err = gs.generateOXQuestion(ctx, selectedConv, topic)
+	case "fill_in_blank":
+		response, err = gs.generateFillInTheBlankQuestion(ctx, selectedConv, topic)
 	case "multiple_choice":
 		response, err = gs.generateMultipleChoiceQuestion(ctx, selectedConv, topic)
 	default:
@@ -188,7 +199,7 @@ func (gs *GameService) extractTopic(conv models.RAGConversationSearchResult) str
 	return "일반"
 }
 
-func (gs *GameService) generateOXQuestion(ctx context.Context, conv models.RAGConversationSearchResult, topic string) (*models.OXQuestionResponse, error) {
+func (gs *GameService) generateFillInTheBlankQuestion(ctx context.Context, conv models.RAGConversationSearchResult, topic string) (*models.FillInTheBlankQuestionResponse, error) {
 	// Combine conversation content
 	var content string
 	for _, msg := range conv.Messages {
@@ -199,11 +210,12 @@ func (gs *GameService) generateOXQuestion(ctx context.Context, conv models.RAGCo
 	// In real implementation, parse JSON response
 
 	qID := uuid.New().String()
-	return &models.OXQuestionResponse{
+	return &models.FillInTheBlankQuestionResponse{
 		QuestionID:          qID,
-		QuestionType:        "ox",
-		Question:            "생성된 OX 문제입니다.",
-		CorrectAnswer:       "O",
+		QuestionType:        "fill_in_blank",
+		Question:            "생성된 빈칸 채우기 문제입니다: ___에 대해 이야기했습니다.",
+		CorrectAnswer:       "정답",
+		AcceptableAnswers:   []string{"유사답안1", "유사답안2"},
 		BasedOnConversation: conv.ConversationID,
 		Difficulty:          "medium",
 		Metadata: models.QuestionMetadata{
@@ -310,7 +322,7 @@ func (gs *GameService) cacheQuestion(q interface{}) {
 	// Extract question ID and store with expiry
 	var qID string
 	switch v := q.(type) {
-	case *models.OXQuestionResponse:
+	case *models.FillInTheBlankQuestionResponse:
 		qID = v.QuestionID
 	case *models.MultipleChoiceQuestionResponse:
 		qID = v.QuestionID

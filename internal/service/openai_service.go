@@ -179,13 +179,14 @@ func (os *OpenAIService) buildSystemPrompt(profileInfo *models.PersonalInfoListR
 	return basePrompt
 }
 
-// GenerateOXQuestion generates an OX quiz question
-func (os *OpenAIService) GenerateOXQuestion(ctx context.Context, conversationContent string, topic string) (*models.OXQuestionResponse, error) {
-	systemPrompt := `과거 대화 내용을 바탕으로 사용자의 기억력을 테스트하는 OX 문제를 생성하세요.
+// GenerateFillInTheBlankQuestion generates a fill-in-the-blank question
+func (os *OpenAIService) GenerateFillInTheBlankQuestion(ctx context.Context, conversationContent string, topic string) (*models.FillInTheBlankQuestionResponse, error) {
+	systemPrompt := `과거 대화 내용을 바탕으로 사용자의 기억력을 테스트하는 빈칸 채우기 문제를 생성하세요.
 생성한 문제는 다음 JSON 형식으로 반환하세요:
 {
-  "question": "문제 내용",
-  "correct_answer": "O 또는 X"
+  "question": "빈칸(___) 포함된 문제 내용",
+  "correct_answer": "정답",
+  "acceptable_answers": ["유사답안1", "유사답안2"]
 }
 
 주의: JSON만 반환하고 다른 텍스트는 포함하지 마세요.`
@@ -194,7 +195,7 @@ func (os *OpenAIService) GenerateOXQuestion(ctx context.Context, conversationCon
 
 주제: %s
 
-위 대화를 바탕으로 OX 문제를 1개 생성하세요.`, conversationContent, topic)
+위 대화를 바탕으로 빈칸 채우기 문제를 1개 생성하세요. 문제에 반드시 빈칸을 나타내는 ___ 기호를 포함하세요.`, conversationContent, topic)
 
 	resp, err := os.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: os.model,
@@ -213,7 +214,7 @@ func (os *OpenAIService) GenerateOXQuestion(ctx context.Context, conversationCon
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate OX question: %w", err)
+		return nil, fmt.Errorf("failed to generate fill-in-the-blank question: %w", err)
 	}
 
 	if len(resp.Choices) == 0 {
