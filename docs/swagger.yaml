@@ -10,6 +10,13 @@ definitions:
       success:
         type: boolean
     type: object
+  models.AnalysisRequest:
+    properties:
+      user_id:
+        type: string
+    required:
+    - user_id
+    type: object
   models.ChatRequest:
     properties:
       message:
@@ -83,6 +90,37 @@ info:
   title: LLM Server API
   version: "1.0"
 paths:
+  /api/analysis:
+    post:
+      consumes:
+      - application/json
+      description: Analyze user's conversation history and incorrect quizzes across
+        4 domains (family, life events, career, hobbies)
+      parameters:
+      - description: Analysis request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.AnalysisRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: Process domain analysis
+      tags:
+      - Analysis
   /api/chat:
     post:
       consumes:
