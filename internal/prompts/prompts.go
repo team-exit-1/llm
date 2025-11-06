@@ -253,6 +253,7 @@ func DomainAnalysisSystemPrompt() string {
 3. **직업/경력 (Career)**: 일, 경력, 직업, 일상적 업무, 성취
 4. **취미/관심사 (Hobbies/Interests)**: 취미, 관심분야, 좋아하는 활동, 취향
 
+
 각 영역에 대해:
 - 0-100점의 점수를 매기세요 (높을수록 해당 영역에 대한 정보가 풍부함)
 - 5줄 이내의 인사이트를 제공하세요
@@ -276,7 +277,8 @@ JSON 형식으로 반환하세요:
     "score": 0-100,
     "insights": ["인사이트 1", "인사이트 2", ...]
   }
-}`
+}
+`
 }
 
 // DomainAnalysisUserPrompt builds the user prompt for domain analysis
@@ -324,6 +326,7 @@ func AnalysisReportSystemPrompt() string {
 - 각 영역별 분석과 통찰 포함
 - 행동 권장사항 제시
 - 따뜻하고 격려적인 톤 유지
+- 한국어로 작성해라
 
 구조:
 1. 제목과 개요 (Executive Summary)
