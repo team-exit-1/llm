@@ -277,3 +277,35 @@ type IncorrectQuizAttemptsResponse struct {
 	Total  int                    `json:"total,omitempty"`
 	UserID string                 `json:"user_id,omitempty"`
 }
+
+// ===== Domain Analysis Models =====
+
+// DomainScore represents the score and insights for a single domain
+type DomainScore struct {
+	Domain    string   `json:"domain"`    // "family", "life_events", "career", "hobbies"
+	Score     int      `json:"score"`     // 0-100
+	Insights  []string `json:"insights"`  // 인사이트 (최대 5줄)
+	Analysis  string   `json:"analysis"`  // 상세 분석 텍스트
+}
+
+// AnalysisResult represents the complete domain analysis result
+type AnalysisResult struct {
+	UserID   string         `json:"user_id"`
+	Domains  []DomainScore  `json:"domains"` // 4개 도메인: family, life_events, career, hobbies
+	Summary  string         `json:"summary"`
+	Report   string         `json:"report"`  // MD 형식의 전문적 리포트
+	AnalyzedAt time.Time   `json:"analyzed_at"`
+}
+
+// AnalysisRequest represents a request for domain analysis
+type AnalysisRequest struct {
+	UserID string `json:"user_id" binding:"required"`
+}
+
+// AnalysisResponse represents the API response for analysis
+type AnalysisResponse struct {
+	UserID    string        `json:"user_id"`
+	Domains   []DomainScore `json:"domains"`
+	Report    string        `json:"report"`    // MD 형식 리포트 (2000자 이상)
+	AnalyzedAt time.Time    `json:"analyzed_at"`
+}

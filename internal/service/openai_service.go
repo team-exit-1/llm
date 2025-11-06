@@ -333,3 +333,133 @@ type Question struct {
 	} `json:"options"`
 	CorrectAnswer string `json:"correct_answer"`
 }
+
+// AnalyzeDomains analyzes user conversation and incorrect quizzes across 4 domains
+func (os *OpenAIService) AnalyzeDomains(ctx context.Context, conversationHistory []string, incorrectQuizzes []string) ([]models.DomainScore, error) {
+	os.logger.Start("Domain Analysis")
+
+	systemPrompt := prompts.DomainAnalysisSystemPrompt()
+	userPrompt := prompts.DomainAnalysisUserPrompt(conversationHistory, incorrectQuizzes)
+
+	messages := []openai.ChatCompletionMessage{
+		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
+		{Role: openai.ChatMessageRoleUser, Content: userPrompt},
+	}
+
+	content, err := os.callOpenAI(ctx, messages)
+	if err != nil {
+		os.logger.Error("Failed to analyze domains", err)
+		os.logger.End("Domain Analysis")
+		return nil, fmt.Errorf("failed to analyze domains: %w", err)
+	}
+
+	// Parse response
+	var analysisResult struct {
+		Family struct {
+			Score    int      `json:"score"`
+			Insights []string `json:"insights"`
+		} `json:"family"`
+		LifeEvents struct {
+			Score    int      `json:"score"`
+			Insights []string `json:"insights"`
+		} `json:"life_events"`
+		Career struct {
+			Score    int      `json:"score"`
+			Insights []string `json:"insights"`
+		} `json:"career"`
+		Hobbies struct {
+			Score    int      `json:"score"`
+			Insights []string `json:"insights"`
+		} `json:"hobbies"`
+	}
+
+	if err := json.Unmarshal([]byte(content), &analysisResult); err != nil {
+		os.logger.Error("Failed to parse domain analysis response", err)
+		os.logger.End("Domain Analysis")
+		return nil, fmt.Errorf("failed to parse domain analysis: %w", err)
+	}
+
+	// Create domain scores
+	domains := []models.DomainScore{
+		{
+			Domain:   "family",
+			Score:    analysisResult.Family.Score,
+			Insights: analysisResult.Family.Insights,
+		},
+		{
+			Domain:   "life_events",
+			Score:    analysisResult.LifeEvents.Score,
+			Insights: analysisResult.LifeEvents.Insights,
+		},
+		{
+			Domain:   "career",
+			Score:    analysisResult.Career.Score,
+			Insights: analysisResult.Career.Insights,
+		},
+		{
+			Domain:   "hobbies",
+			Score:    analysisResult.Hobbies.Score,
+			Insights: analysisResult.Hobbies.Insights,
+		},
+	}
+
+	os.logger.Success("Domain analysis completed")
+	os.logger.KeyValue("Family", analysisResult.Family.Score, "Life Events", analysisResult.LifeEvents.Score, "Career", analysisResult.Career.Score, "Hobbies", analysisResult.Hobbies.Score)
+	os.logger.End("Domain Analysis")
+
+	return domains, nil
+}
+
+// GenerateAnalysisReport generates a professional markdown report based on domain analysis
+func (os *OpenAIService) GenerateAnalysisReport(ctx context.Context, domains []models.DomainScore) (string, error) {
+	os.logger.Start("Generate Analysis Report")
+
+	systemPrompt := prompts.AnalysisReportSystemPrompt()
+
+	// Extract scores and insights from domains
+	familyScore, familyInsights := 0, []string{}
+	lifeEventsScore, lifeEventsInsights := 0, []string{}
+	careerScore, careerInsights := 0, []string{}
+	hobbiesScore, hobbiesInsights := 0, []string{}
+
+	for _, domain := range domains {
+		switch domain.Domain {
+		case "family":
+			familyScore = domain.Score
+			familyInsights = domain.Insights
+		case "life_events":
+			lifeEventsScore = domain.Score
+			lifeEventsInsights = domain.Insights
+		case "career":
+			careerScore = domain.Score
+			careerInsights = domain.Insights
+		case "hobbies":
+			hobbiesScore = domain.Score
+			hobbiesInsights = domain.Insights
+		}
+	}
+
+	userPrompt := prompts.AnalysisReportUserPrompt(
+		familyScore, familyInsights,
+		lifeEventsScore, lifeEventsInsights,
+		careerScore, careerInsights,
+		hobbiesScore, hobbiesInsights,
+	)
+
+	messages := []openai.ChatCompletionMessage{
+		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
+		{Role: openai.ChatMessageRoleUser, Content: userPrompt},
+	}
+
+	content, err := os.callOpenAI(ctx, messages)
+	if err != nil {
+		os.logger.Error("Failed to generate report", err)
+		os.logger.End("Generate Analysis Report")
+		return "", fmt.Errorf("failed to generate report: %w", err)
+	}
+
+	os.logger.Success("Report generated successfully")
+	os.logger.End("Generate Analysis Report")
+
+	return content, nil
+}

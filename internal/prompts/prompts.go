@@ -241,3 +241,122 @@ func MemoryEvaluationUserPrompt(question string, userAnswer string, isCorrect bo
 
 위 정보를 바탕으로 사용자의 기억 정도를 평가하세요.`, question, userAnswer, isCorrect, responseTimeMs, topic)
 }
+
+// ===== Domain Analysis Prompts =====
+
+// DomainAnalysisSystemPrompt returns the system prompt for domain analysis
+func DomainAnalysisSystemPrompt() string {
+	return `당신은 사용자의 대화 기록과 틀린 퀴즈를 분석하여 다음 4가지 인생 영역에 대해 평가하는 전문가입니다:
+
+1. **가족 (Family)**: 가족관계, 가족 구성원, 가족 이야기에 관한 내용
+2. **생애사건 (Life Events)**: 중요한 인생 사건, 경험, 추억, 기념일
+3. **직업/경력 (Career)**: 일, 경력, 직업, 일상적 업무, 성취
+4. **취미/관심사 (Hobbies/Interests)**: 취미, 관심분야, 좋아하는 활동, 취향
+
+각 영역에 대해:
+- 0-100점의 점수를 매기세요 (높을수록 해당 영역에 대한 정보가 풍부함)
+- 5줄 이내의 인사이트를 제공하세요
+- 핵심 내용을 명확하게 파악하세요
+
+JSON 형식으로 반환하세요:
+{
+  "family": {
+    "score": 0-100,
+    "insights": ["인사이트 1", "인사이트 2", ...]
+  },
+  "life_events": {
+    "score": 0-100,
+    "insights": ["인사이트 1", "인사이트 2", ...]
+  },
+  "career": {
+    "score": 0-100,
+    "insights": ["인사이트 1", "인사이트 2", ...]
+  },
+  "hobbies": {
+    "score": 0-100,
+    "insights": ["인사이트 1", "인사이트 2", ...]
+  }
+}`
+}
+
+// DomainAnalysisUserPrompt builds the user prompt for domain analysis
+func DomainAnalysisUserPrompt(conversationHistory []string, incorrectQuizzes []string) string {
+	conversationStr := "대화 기록이 없습니다."
+	if len(conversationHistory) > 0 {
+		conversationStr = "최근 대화 기록:\n"
+		for i, conv := range conversationHistory {
+			if i >= 20 { // 최대 20개까지만
+				conversationStr += fmt.Sprintf("... (외 %d개)\n", len(conversationHistory)-i)
+				break
+			}
+			conversationStr += fmt.Sprintf("%d. %s\n", i+1, conv)
+		}
+	}
+
+	quizStr := "틀린 퀴즈가 없습니다."
+	if len(incorrectQuizzes) > 0 {
+		quizStr = "사용자가 틀린 퀴즈:\n"
+		for i, quiz := range incorrectQuizzes {
+			if i >= 10 { // 최대 10개까지만
+				quizStr += fmt.Sprintf("... (외 %d개)\n", len(incorrectQuizzes)-i)
+				break
+			}
+			quizStr += fmt.Sprintf("%d. %s\n", i+1, quiz)
+		}
+	}
+
+	return fmt.Sprintf(`%s
+
+%s
+
+위의 대화 기록과 퀴즈를 분석하여 4가지 인생 영역(가족, 생애사건, 직업/경력, 취미/관심사)에 대해 점수와 인사이트를 제공하세요.`, conversationStr, quizStr)
+}
+
+// AnalysisReportSystemPrompt returns the system prompt for analysis report generation
+func AnalysisReportSystemPrompt() string {
+	return `당신은 치매 예방 및 인지 자극 프로그램의 전문 분석가입니다.
+사용자의 도메인 분석 결과를 바탕으로 전문적이면서도 이해하기 쉬운 MD 형식의 리포트를 작성해야 합니다.
+
+리포트 작성 요구사항:
+- 마크다운 형식 사용
+- 전문적이지만 일반인이 이해하기 쉬운 언어 사용
+- 2000자 이상의 상세한 내용
+- 각 영역별 분석과 통찰 포함
+- 행동 권장사항 제시
+- 따뜻하고 격려적인 톤 유지
+
+구조:
+1. 제목과 개요 (Executive Summary)
+2. 각 영역별 상세 분석 (4개 섹션)
+3. 종합 분석 및 통찰
+4. 개선 권장사항
+5. 결론 및 격려의 말`
+}
+
+// AnalysisReportUserPrompt builds the user prompt for analysis report generation
+func AnalysisReportUserPrompt(familyScore int, familyInsights []string, lifeEventsScore int, lifeEventsInsights []string, careerScore int, careerInsights []string, hobbiesScore int, hobbiesInsights []string) string {
+	insightsFormat := func(insights []string) string {
+		result := ""
+		for _, insight := range insights {
+			result += fmt.Sprintf("- %s\n", insight)
+		}
+		return result
+	}
+
+	return fmt.Sprintf(`다음은 사용자의 도메인 분석 결과입니다:
+
+## 가족 (Family) - %d점
+%s
+
+## 생애사건 (Life Events) - %d점
+%s
+
+## 직업/경력 (Career) - %d점
+%s
+
+## 취미/관심사 (Hobbies/Interests) - %d점
+%s
+
+위의 분석 결과를 바탕으로 전문적이고 상세한 리포트를 마크다운 형식으로 작성해주세요.
+리포트는 2000자 이상이어야 하며, 각 영역의 특징과 의미를 깊이 있게 해석하고, 개선 방향을 제시해주세요.`, familyScore, insightsFormat(familyInsights), lifeEventsScore, insightsFormat(lifeEventsInsights), careerScore, insightsFormat(careerInsights), hobbiesScore, insightsFormat(hobbiesInsights))
+}

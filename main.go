@@ -55,9 +55,10 @@ func main() {
 	// Initialize services
 	chatService := service.NewChatService(cfg, ragClient, openaiService)
 	gameService := service.NewGameService(cfg, ragClient, openaiService)
+	analysisService := service.NewAnalysisService(ragClient, openaiService)
 
 	// Setup router
-	router := api.Router(cfg, chatService, gameService)
+	router := api.Router(cfg, chatService, gameService, analysisService)
 
 	// Start server in a goroutine
 	addr := fmt.Sprintf(":%d", cfg.Port)

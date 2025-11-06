@@ -12,7 +12,7 @@ import (
 )
 
 // Router sets up all API routes
-func Router(cfg *config.Config, chatService *service.ChatService, gameService *service.GameService) *gin.Engine {
+func Router(cfg *config.Config, chatService *service.ChatService, gameService *service.GameService, analysisService *service.AnalysisService) *gin.Engine {
 	router := gin.Default()
 
 	// Apply middlewares
@@ -21,6 +21,7 @@ func Router(cfg *config.Config, chatService *service.ChatService, gameService *s
 	// Create handlers
 	chatHandler := handler.NewChatHandler(chatService)
 	gameHandler := handler.NewGameHandler(gameService)
+	analysisHandler := handler.NewAnalysisHandler(analysisService)
 	healthHandler := handler.NewHealthHandler()
 
 	// Swagger UI
@@ -40,6 +41,12 @@ func Router(cfg *config.Config, chatService *service.ChatService, gameService *s
 	{
 		game.POST("/question", gameHandler.GenerateQuestion)
 		game.POST("/result", gameHandler.EvaluateResult)
+	}
+
+	// Analysis API routes
+	analysis := router.Group("/api")
+	{
+		analysis.POST("/analysis", analysisHandler.ProcessAnalysis)
 	}
 
 	return router
