@@ -350,6 +350,113 @@ func (os *OpenAIService) GenerateMultipleChoiceQuestion(ctx context.Context, con
 	return nil, nil // Return parsed result in actual implementation
 }
 
+// EvaluateUserResponseQuality evaluates the quality of user's response in conversation
+func (os *OpenAIService) EvaluateUserResponseQuality(ctx context.Context, userMessage string, contextMessages []string, profileInfo *models.PersonalInfoListResponse) (int, error) {
+	log.Printf("\n=== USER RESPONSE QUALITY EVALUATION ===\n")
+
+	// Build evaluation prompt
+	systemPrompt := `당신은 사용자의 대화 응답을 평가하는 전문가입니다.
+사용자의 응답이 얼마나 자연스럽고, 일관성 있으며, 정확한지 평가하세요.
+0-100점 범위로 점수를 매겨주세요.
+
+평가 기준:
+- 일관성 (30점): 프로필 정보와 과거 대화와 일치하는가?
+- 자연스러움 (30점): 일상적인 대화체로 자연스러운가?
+- 구체성 (20점): 충분히 구체적이고 상세한 답변인가?
+- 정확성 (20점): 사실과 맞는 답변인가?
+
+JSON 형식으로 반환하세요:
+{
+  "score": 0-100 범위의 정수,
+  "reasoning": "평가 이유"
+}`
+
+	profileContext := "사용자 프로필 정보: 없음"
+	if profileInfo != nil && len(profileInfo.Items) > 0 {
+		profileJSON, _ := json.MarshalIndent(profileInfo.Items, "", "  ")
+		profileContext = fmt.Sprintf("사용자 프로필 정보:\n%s", string(profileJSON))
+	}
+
+	contextStr := "과거 대화 이력: 없음"
+	if len(contextMessages) > 0 {
+		contextStr = "과거 대화 이력:\n"
+		for i, msg := range contextMessages {
+			if i >= 3 {
+				break
+			}
+			contextStr += fmt.Sprintf("- %s\n", msg)
+		}
+	}
+
+	userPrompt := fmt.Sprintf(`%s
+
+%s
+
+사용자의 현재 응답: "%s"
+
+위 정보를 바탕으로 사용자의 응답 품질을 평가하세요.`, profileContext, contextStr, userMessage)
+
+	log.Printf("\n--- Evaluation System Prompt ---\n")
+	log.Printf("%s\n", systemPrompt)
+	log.Printf("\n--- Evaluation User Prompt ---\n")
+	log.Printf("%s\n", userPrompt)
+
+	resp, err := os.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+		Model: os.model,
+		Messages: []openai.ChatCompletionMessage{
+			{
+				Role:    openai.ChatMessageRoleSystem,
+				Content: systemPrompt,
+			},
+			{
+				Role:    openai.ChatMessageRoleUser,
+				Content: userPrompt,
+			},
+		},
+		Temperature: 0.7,
+		MaxTokens:   200,
+	})
+
+	if err != nil {
+		log.Printf("ERROR: Failed to evaluate user response: %v\n", err)
+		return 50, fmt.Errorf("failed to evaluate response: %w", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		log.Printf("ERROR: No response from OpenAI\n")
+		return 50, fmt.Errorf("no response from OpenAI")
+	}
+
+	responseContent := resp.Choices[0].Message.Content
+	log.Printf("\n--- OpenAI Evaluation Response ---\n")
+	log.Printf("%s\n", responseContent)
+
+	// Parse JSON response to extract score
+	var evaluationResult struct {
+		Score     int    `json:"score"`
+		Reasoning string `json:"reasoning"`
+	}
+
+	if err := json.Unmarshal([]byte(responseContent), &evaluationResult); err != nil {
+		log.Printf("WARNING: Failed to parse evaluation JSON, using default score of 50\n")
+		log.Printf("Parse error: %v\n", err)
+		return 50, nil
+	}
+
+	// Ensure score is within 0-100 range
+	if evaluationResult.Score < 0 {
+		evaluationResult.Score = 0
+	} else if evaluationResult.Score > 100 {
+		evaluationResult.Score = 100
+	}
+
+	log.Printf("\n--- Final Quality Score ---\n")
+	log.Printf("Score: %d/100\n", evaluationResult.Score)
+	log.Printf("Reasoning: %s\n\n", evaluationResult.Reasoning)
+
+	return evaluationResult.Score, nil
+}
+
 // EvaluateMemory evaluates user's memory based on game result
 func (os *OpenAIService) EvaluateMemory(ctx context.Context, question string, userAnswer string, isCorrect bool, responseTimeMs int64, topic string) (*models.MemoryEvaluation, error) {
 	systemPrompt := `사용자의 게임 결과를 분석하여 해당 주제에 대한 기억 정도를 평가하세요.

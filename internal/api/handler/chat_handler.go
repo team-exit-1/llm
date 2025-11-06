@@ -10,9 +10,6 @@ import (
 	"llm/internal/service"
 )
 
-///// TODO : 일단 잘 답변을 했는지를 검사를 해야함.
-///// TODO : 프로필하고 이전 대화 기반으로 기억을 리마인딩 시키되, 자연스러운 일상대화를 해야함.
-
 // ChatHandler handles chat API requests
 type ChatHandler struct {
 	chatService *service.ChatService

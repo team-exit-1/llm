@@ -147,11 +147,12 @@ type RAGConversationSaveRequest struct {
 
 // RAGMetadata represents metadata for RAG storage
 type RAGMetadata struct {
-	Source         string  `json:"source,omitempty"`
-	SessionID      string  `json:"session_id,omitempty"`
-	Type           string  `json:"type,omitempty"` // "chat", "memory_evaluation", etc.
-	RetentionScore float32 `json:"retention_score,omitempty"`
-	QuestionID     string  `json:"question_id,omitempty"`
+	Source            string  `json:"source,omitempty"`
+	SessionID         string  `json:"session_id,omitempty"`
+	Type              string  `json:"type,omitempty"` // "chat", "memory_evaluation", etc.
+	RetentionScore    float32 `json:"retention_score,omitempty"`
+	QuestionID        string  `json:"question_id,omitempty"`
+	ConversationScore int     `json:"conversation_score,omitempty"` // 0-100: Quality score of the conversation
 }
 
 // ===== API Response Wrappers =====

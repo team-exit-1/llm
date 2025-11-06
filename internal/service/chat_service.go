@@ -150,6 +150,15 @@ func (cs *ChatService) ProcessChat(ctx context.Context, req *models.ChatRequest)
 
 	log.Printf("\n--- OpenAI Response ---\n")
 	log.Printf("%s\n", response)
+
+	// Evaluate user response quality (0-100)
+	log.Printf("\n--- Evaluating User Response Quality ---\n")
+	responseScore, evalErr := cs.openaiService.EvaluateUserResponseQuality(ctx, req.Message, contextMessages, profileInfo)
+	if evalErr != nil {
+		log.Printf("WARNING: Failed to evaluate response quality: %v\n", evalErr)
+		responseScore = 50 // Default score if evaluation fails
+	}
+
 	log.Printf("\n=== CHAT SERVICE LOG END ===\n\n")
 
 	// Create conversation ID
@@ -170,9 +179,10 @@ func (cs *ChatService) ProcessChat(ctx context.Context, req *models.ChatRequest)
 				},
 			},
 			Metadata: &models.RAGMetadata{
-				Source:    "llm_chat",
-				SessionID: req.UserID,
-				Type:      "chat",
+				Source:            "llm_chat",
+				SessionID:         req.UserID,
+				Type:              "chat",
+				ConversationScore: responseScore,
 			},
 		}
 
@@ -180,7 +190,9 @@ func (cs *ChatService) ProcessChat(ctx context.Context, req *models.ChatRequest)
 		defer cancel()
 
 		if _, err := cs.ragClient.SaveConversation(ctx, saveReq); err != nil {
-			fmt.Printf("warning: failed to save conversation to RAG: %v\n", err)
+			log.Printf("warning: failed to save conversation to RAG: %v\n", err)
+		} else {
+			log.Printf("Conversation saved to RAG with quality score: %d/100\n", responseScore)
 		}
 	}()
 
