@@ -69,7 +69,7 @@
         },
         "/api/game/question": {
             "post": {
-                "description": "Generate an OX or multiple choice question based on user's conversation history",
+                "description": "Generate an Fill in Blank or multiple choice question based on user's conversation history",
                 "consumes": [
                     "application/json"
                 ],
@@ -223,7 +223,7 @@
                 "question_type": {
                     "type": "string",
                     "enum": [
-                        "ox",
+                        "fill_in_blank",
                         "multiple_choice"
                     ]
                 },
