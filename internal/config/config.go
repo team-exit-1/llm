@@ -22,6 +22,7 @@ type Config struct {
 	OpenAIModel       string
 	OpenAITemperature float32
 	OpenAIMaxTokens   int
+	OpenAITimeout     time.Duration
 
 	// Game Settings
 	MinConversationsForGame int
@@ -43,6 +44,7 @@ func Load() (*Config, error) {
 		OpenAIModel:             getEnv("OPENAI_MODEL", "gpt-4"),
 		OpenAITemperature:       float32(getEnvAsFloat("OPENAI_TEMPERATURE", 0.7)),
 		OpenAIMaxTokens:         getEnvAsInt("OPENAI_MAX_TOKENS", 3000),
+		OpenAITimeout:           time.Duration(getEnvAsInt("OPENAI_API_TIMEOUT", 300000)) * time.Millisecond, // 5 minutes
 		MinConversationsForGame: getEnvAsInt("MIN_CONVERSATIONS_FOR_GAME", 5),
 		QuestionCacheTTL:        time.Duration(getEnvAsInt("QUESTION_CACHE_TTL", 300)) * time.Second,
 		LogLevel:                getEnv("LOG_LEVEL", "info"),

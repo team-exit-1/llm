@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"llm/internal/client"
+	"llm/internal/config"
 	"llm/internal/models"
 	"llm/internal/util"
 )
@@ -14,12 +15,14 @@ import (
 type AnalysisService struct {
 	ragClient     *client.RAGClient
 	openaiService *OpenAIService
+	cfg           *config.Config
 	logger        *util.Logger
 }
 
 // NewAnalysisService creates a new analysis service
-func NewAnalysisService(ragClient *client.RAGClient, openaiService *OpenAIService) *AnalysisService {
+func NewAnalysisService(cfg *config.Config, ragClient *client.RAGClient, openaiService *OpenAIService) *AnalysisService {
 	return &AnalysisService{
+		cfg:           cfg,
 		ragClient:     ragClient,
 		openaiService: openaiService,
 		logger:        util.NewLogger("AnalysisService"),
@@ -62,18 +65,25 @@ func (as *AnalysisService) ProcessAnalysisRequest(ctx context.Context, req *mode
 	as.logger.Section("Fetched Data")
 	as.logger.KeyValue("Conversations", len(conversationHistory), "Incorrect Quizzes", len(incorrectQuizzes))
 
+	// Create a context with OpenAI timeout for analysis operations
+	openaiCtx, cancel := context.WithTimeout(context.Background(), as.cfg.OpenAITimeout)
+	defer cancel()
+
 	// Step 1: Analyze domains
 	as.logger.Section("Step 1: Analyzing Domains")
-	domains, err := as.openaiService.AnalyzeDomains(ctx, conversationHistory, incorrectQuizzes)
+	domains, err := as.openaiService.AnalyzeDomains(openaiCtx, conversationHistory, incorrectQuizzes)
 	if err != nil {
 		as.logger.Error("Failed to analyze domains", err)
 		as.logger.End("Process Analysis Request")
 		return nil, fmt.Errorf("failed to analyze domains: %w", err)
 	}
 
-	// Step 2: Generate professional report
+	// Step 2: Generate professional report (create new context to avoid timeout from step 1)
 	as.logger.Section("Step 2: Generating Professional Report")
-	report, err := as.openaiService.GenerateAnalysisReport(ctx, domains)
+	reportCtx, reportCancel := context.WithTimeout(context.Background(), as.cfg.OpenAITimeout)
+	defer reportCancel()
+
+	report, err := as.openaiService.GenerateAnalysisReport(reportCtx, domains)
 	if err != nil {
 		as.logger.Error("Failed to generate report", err)
 		as.logger.End("Process Analysis Request")

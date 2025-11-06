@@ -342,8 +342,8 @@ func (gs *GameService) saveEvaluation(ctx context.Context, req *models.GameResul
 		ConversationID: fmt.Sprintf("memory_eval_%s", uuid.New().String()),
 		Messages: []models.RAGMessage{
 			{
-				Role:    "system",
-				Content: fmt.Sprintf("사용자가 %s에 대한 기억력 테스트에서 %s", topic, map[bool]string{true: "정답", false: "오답"}[req.IsCorrect]),
+				Role:    "user",
+				Content: fmt.Sprintf("[기억력 테스트] 주제: %s, 결과: %s, 점수: %.2f", topic, map[bool]string{true: "정답", false: "오답"}[req.IsCorrect], retentionScore),
 			},
 		},
 		Metadata: &models.RAGMetadata{

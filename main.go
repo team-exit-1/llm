@@ -55,7 +55,7 @@ func main() {
 	// Initialize services
 	chatService := service.NewChatService(cfg, ragClient, openaiService)
 	gameService := service.NewGameService(cfg, ragClient, openaiService)
-	analysisService := service.NewAnalysisService(ragClient, openaiService)
+	analysisService := service.NewAnalysisService(cfg, ragClient, openaiService)
 
 	// Setup router
 	router := api.Router(cfg, chatService, gameService, analysisService)
