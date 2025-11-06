@@ -99,7 +99,7 @@ func (as *AnalysisService) fetchConversationHistory(ctx context.Context, userID 
 	as.logger.Section("Fetching Conversation History")
 
 	// Fetch all conversations for this user using a broad search query
-	results, err := as.ragClient.SearchConversations(ctx, userID, 50)
+	results, err := as.ragClient.SearchConversations(ctx, userID, 25)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search conversations: %w", err)
 	}
